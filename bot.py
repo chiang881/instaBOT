@@ -123,8 +123,10 @@ def create_chat_completion(messages):
                 "top_p": 0.9,
                 "max_tokens": 95
             }
+            # 确保 API URL 完整
+            api_url = LINGYI_API_BASE if LINGYI_API_BASE.startswith('http') else 'https://api.lingyiwanwu.com/v1/chat/completions'
             response = requests.post(
-                LINGYI_API_BASE,
+                api_url,
                 headers=headers,
                 json=payload
             )
