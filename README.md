@@ -21,10 +21,18 @@
 1. Instagram 账号配置：
 - `INSTAGRAM_USERNAME`: Instagram 用户名
 - `INSTAGRAM_PASSWORD`: Instagram 密码
+- `INSTAGRAM_SESSION`: Instagram 会话文件内容（用于免登录）
 
 2. OpenAI/Deepseek 配置：
 - `OPENAI_API_KEY`: API密钥
 - `OPENAI_API_BASE`: API基础URL（默认为 https://api.deepseek.com/v1）
+
+### 获取 Session 内容
+
+1. 在本地运行一次机器人，成功登录后会生成 `session.json`
+2. 复制 `session.json` 的内容
+3. 在 GitHub Secrets 中添加 `INSTAGRAM_SESSION`，粘贴文件内容
+4. 删除本地的 `session.json` 文件
 
 ## 自动化运行
 
@@ -37,4 +45,5 @@
 
 1. 建议使用私有仓库部署
 2. 请遵守 Instagram 的使用条款和限制
-3. 确保所有敏感信息都存储在 GitHub Secrets 中 
+3. 确保所有敏感信息都存储在 GitHub Secrets 中
+4. 不要将 session.json 文件提交到仓库 
