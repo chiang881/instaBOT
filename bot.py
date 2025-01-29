@@ -100,7 +100,9 @@ def create_chat_completion(messages):
         # 先尝试使用 DeepSeek
         response = openai.ChatCompletion.create(
             model="deepseek-chat",
-            messages=messages
+            messages=messages,
+            temperature=0.50,
+            max_tokens=95
         )
         content = response.choices[0].message['content']
         if "None [200] GET" in content:  # DeepSeek API 错误
@@ -117,9 +119,9 @@ def create_chat_completion(messages):
             payload = {
                 "model": "yi-34b-chat",
                 "messages": messages,
-                "temperature": 0.7,
+                "temperature": 0.50,
                 "top_p": 0.9,
-                "max_tokens": 1000
+                "max_tokens": 95
             }
             response = requests.post(
                 "https://api.lingyiwanwu.com/v1/chat/completions",
