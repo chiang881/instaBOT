@@ -30,6 +30,8 @@ INSTAGRAM_USERNAME = os.getenv('INSTAGRAM_USERNAME', '')
 INSTAGRAM_PASSWORD = os.getenv('INSTAGRAM_PASSWORD', '')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_API_BASE = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
+LINGYI_API_KEY = os.getenv('LINGYI_API_KEY', '')
+LINGYI_API_BASE = os.getenv('LINGYI_API_BASE', 'https://api.lingyiwanwu.com/v1/chat/completions')
 
 # 配置OpenAI
 openai.api_key = OPENAI_API_KEY
@@ -100,9 +102,7 @@ def create_chat_completion(messages):
         # 先尝试使用 DeepSeek
         response = openai.ChatCompletion.create(
             model="deepseek-chat",
-            messages=messages,
-            temperature=0.50,
-            max_tokens=95
+            messages=messages
         )
         content = response.choices[0].message['content']
         if "None [200] GET" in content:  # DeepSeek API 错误
@@ -113,18 +113,18 @@ def create_chat_completion(messages):
         try:
             # 使用灵医万物 API
             headers = {
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Authorization": f"Bearer {LINGYI_API_KEY}",
                 "Content-Type": "application/json"
             }
             payload = {
-                "model": "yi-34b-chat",
+                "model": "yi-lightning",
                 "messages": messages,
                 "temperature": 0.50,
                 "top_p": 0.9,
                 "max_tokens": 95
             }
             response = requests.post(
-                "https://api.lingyiwanwu.com/v1/chat/completions",
+                LINGYI_API_BASE,
                 headers=headers,
                 json=payload
             )

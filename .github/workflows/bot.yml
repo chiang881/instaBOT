@@ -36,4 +36,6 @@ jobs:
         INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
         INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }} 
+        OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+        LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
+        LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }} 
