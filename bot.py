@@ -16,6 +16,7 @@ from instagrapi.exceptions import (
     ChallengeError, ChallengeSelfieCaptcha, ChallengeUnknownStep
 )
 import os
+import requests
 
 # 配置日志
 logging.basicConfig(
@@ -94,12 +95,44 @@ def change_password_handler(username):
     return password
 
 def create_chat_completion(messages):
-    """创建聊天完成"""
-    response = openai.ChatCompletion.create(
-        model="deepseek-chat",
-        messages=messages
-    )
-    return response.choices[0].message['content']  # 使用字典访问方式
+    """创建聊天完成，如果 DeepSeek 失败则使用灵医万物"""
+    try:
+        # 先尝试使用 DeepSeek
+        response = openai.ChatCompletion.create(
+            model="deepseek-chat",
+            messages=messages
+        )
+        content = response.choices[0].message['content']
+        if "None [200] GET" in content:  # DeepSeek API 错误
+            raise Exception("DeepSeek API error")
+        return content
+    except Exception as e:
+        logger.warning(f"DeepSeek API 调用失败，切换到灵医万物: {str(e)}")
+        try:
+            # 使用灵医万物 API
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "yi-34b-chat",
+                "messages": messages,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_tokens": 1000
+            }
+            response = requests.post(
+                "https://api.lingyiwanwu.com/v1/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            if response.status_code == 200:
+                return response.json()['choices'][0]['message']['content']
+            else:
+                raise Exception(f"灵医万物 API 错误: {response.text}")
+        except Exception as e2:
+            logger.error(f"灵医万物 API 也失败了: {str(e2)}")
+            raise
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -284,7 +317,7 @@ class InstagramBot:
             return ""
 
     def get_ai_response(self, message, thread_id):
-        """生成AI回复，考虑对话上下文，并利用上下文缓存"""
+        """生成AI回复，考虑对话上下文"""
         try:
             logger.info(f"正在生成AI回复，用户消息: ***")
             
@@ -294,8 +327,8 @@ class InstagramBot:
             
             context = self.conversation_contexts[thread_id]
             
-            # 构建固定的系统提示和历史对话消息列表（这部分会被缓存）
-            cached_messages = [
+            # 构建消息列表
+            messages = [
                 {"role": "system", "content": """Things to do:
 1. Language style:
 - Use slang or colloquialisms, keep it short and concise (word count for answers ≈ word count for questions, omit periods, make commas, blur the language)
@@ -314,30 +347,17 @@ Do not negate what you have said before:
 - Hidden identity: first-year students (avoid mentioning them)"""}
             ]
             
-            # 添加历史对话作为上下文（这部分也会被缓存）
+            # 添加历史对话作为上下文
             for ctx_message in context:
                 role = "user" if "(用户)" in ctx_message else "assistant"
                 content = ctx_message.replace("(用户) ", "").replace("(我AI) ", "").replace("(历史总结) ", "")
-                cached_messages.append({"role": role, "content": content})
+                messages.append({"role": role, "content": content})
             
-            # 添加新消息（这部分不会被缓存）
-            messages = cached_messages + [{"role": "user", "content": message}]
+            # 添加新消息
+            messages.append({"role": "user", "content": message})
             
             time.sleep(random.uniform(1, 3))
-            ai_response = create_chat_completion(messages)
-            
-            # 记录缓存命中状态（如果有的话）
-            if isinstance(ai_response, dict) and 'usage' in ai_response:
-                cache_hit = ai_response['usage'].get('prompt_cache_hit_tokens', 0)
-                cache_miss = ai_response['usage'].get('prompt_cache_miss_tokens', 0)
-                logger.info(f"缓存状态 - 命中tokens: {cache_hit}, 未命中tokens: {cache_miss}")
-            
-            # 如果返回的是字符串，直接使用；如果是对象，则提取内容
-            if isinstance(ai_response, str):
-                response_text = ai_response
-            else:
-                response_text = ai_response.choices[0].message.content
-                
+            response_text = create_chat_completion(messages)
             logger.info(f"AI回复生成成功: ***")
             
             # 将AI回复添加到上下文（带上身份标记）
