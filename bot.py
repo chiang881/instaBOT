@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # 配置OpenAI
 openai.api_key = "sk-0c519a85159e4f0c84ae2b78f7e90767"
-openai.api_base = "https://api.deepseek.com/v1"
+openai.api_base = "https://api.deepseek.com/v1"  # Deepseek使用api_base
 
 # Gmail验证码邮箱配置
 CHALLENGE_EMAIL = "your_email@gmail.com"  # 替换为你的Gmail邮箱
@@ -85,6 +85,14 @@ def change_password_handler(username):
     password = "".join(random.sample(chars, 12))  # 生成12位随机密码
     logger.info(f"为账号 {username} 生成新密码: {password}")
     return password
+
+def create_chat_completion(messages):
+    """创建聊天完成"""
+    response = openai.ChatCompletion.create(
+        model="deepseek-chat",
+        messages=messages
+    )
+    return response.choices[0].message.content
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -257,14 +265,11 @@ class InstagramBot:
     def summarize_context(self, context):
         """使用AI总结对话上下文"""
         try:
-            response = openai.chat.completions.create(
-                model="deepseek-chat",
-                messages=[
-                    {"role": "system", "content": "请将以下对话总结为20字以内的要点，保留关键信息。"},
-                    {"role": "user", "content": context}
-                ]
-            )
-            summary = response.choices[0].message.content.strip()
+            messages = [
+                {"role": "system", "content": "请将以下对话总结为20字以内的要点，保留关键信息。"},
+                {"role": "user", "content": context}
+            ]
+            summary = create_chat_completion(messages).strip()
             logger.info(f"对话上下文总结: {summary}")
             return summary
         except Exception as e:
@@ -321,12 +326,7 @@ class InstagramBot:
             messages.append({"role": "user", "content": message})
             
             time.sleep(random.uniform(1, 3))
-            response = openai.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages
-            )
-            
-            ai_response = response.choices[0].message.content
+            ai_response = create_chat_completion(messages)
             logger.info(f"AI回复生成成功: {ai_response}")
             
             # 将AI回复添加到上下文（带上身份标记）
@@ -543,8 +543,8 @@ class InstagramBot:
     def random_action(self):
         """执行随机动作"""
         actions = [
-            (self.browse_feed, 0.7),  # 70%概率浏览帖子
-            (lambda: time.sleep(random.uniform(30, 60)), 0.3),  # 30%概率休息
+            (self.browse_feed, 0.3),  # 30%概率浏览帖子
+            (lambda: time.sleep(random.uniform(30, 60)), 0.7),  # 70%概率休息
         ]
         
         action, _ = random.choices(
@@ -562,8 +562,8 @@ class InstagramBot:
             message_count = 0
             
             while True:
-                # 登录后，50%概率直接回复消息，50%概率先浏览再回复
-                if random.random() < 0.5:
+                # 登录后，70%概率直接回复消息，30%概率先浏览再回复
+                if random.random() < 0.7:
                     logger.info("直接处理消息")
                     self.handle_messages()
                 else:
