@@ -96,20 +96,24 @@ def change_password_handler(username):
     logger.info(f"为账号 {username} 生成新密码: {password}")
     return password
 
-def create_chat_completion(messages):
+def create_chat_completion(messages, use_lingyi=False):
     """创建聊天完成，如果 DeepSeek 失败则使用灵医万物"""
-    try:
-        # 先尝试使用 DeepSeek
-        response = openai.ChatCompletion.create(
-            model="deepseek-chat",
-            messages=messages
-        )
-        content = response.choices[0].message['content']
-        if "None [200] GET" in content:  # DeepSeek API 错误
-            raise Exception("DeepSeek API error")
-        return content
-    except Exception as e:
-        logger.warning(f"DeepSeek API 调用失败，切换到灵医万物: {str(e)}")
+    if not use_lingyi:
+        try:
+            # 先尝试使用 DeepSeek
+            response = openai.ChatCompletion.create(
+                model="deepseek-chat",
+                messages=messages
+            )
+            content = response.choices[0].message['content']
+            if "None [200] GET" in content:  # DeepSeek API 错误
+                raise Exception("DeepSeek API error")
+            return content, False  # 返回内容和是否需要切换到灵医万物
+        except Exception as e:
+            logger.warning(f"DeepSeek API 调用失败，切换到灵医万物: {str(e)}")
+            use_lingyi = True  # 标记需要切换到灵医万物
+    
+    if use_lingyi:
         try:
             # 使用灵医万物 API
             headers = {
@@ -131,7 +135,10 @@ def create_chat_completion(messages):
                 json=payload
             )
             if response.status_code == 200:
-                return response.json()['choices'][0]['message']['content']
+                content = response.json()['choices'][0]['message']['content']
+                if "None [200] GET" in content:  # 检查是否是不支持的文件类型
+                    return "Unsupported file type 😭", True
+                return content, True
             else:
                 raise Exception(f"灵医万物 API 错误: {response.text}")
         except Exception as e2:
@@ -147,6 +154,7 @@ class InstagramBot:
         self.processed_messages = set()  # 用于跟踪已处理的消息
         self.relogin_attempt = 0
         self.max_relogin_attempts = 3
+        self.use_lingyi = False  # 标记是否使用灵医万物 API
         
         # 对话上下文管理
         self.conversation_contexts = {}  # 用于存储每个对话的上下文 {thread_id: [messages]}
@@ -313,7 +321,7 @@ class InstagramBot:
                 {"role": "system", "content": "请将以下对话总结为20字以内的要点，保留关键信息。"},
                 {"role": "user", "content": context}
             ]
-            summary = create_chat_completion(messages).strip()
+            summary, _ = create_chat_completion(messages, self.use_lingyi)
             logger.info(f"对话上下文总结: ***")
             return summary
         except Exception as e:
@@ -361,8 +369,14 @@ Do not negate what you have said before:
             messages.append({"role": "user", "content": message})
             
             time.sleep(random.uniform(1, 3))
-            response_text = create_chat_completion(messages)
-            logger.info(f"AI回复生成成功: ***")
+            response_text, switch_to_lingyi = create_chat_completion(messages, self.use_lingyi)
+            if switch_to_lingyi:
+                self.use_lingyi = True  # 更新标志，之后都使用灵医万物
+            
+            if response_text == "Unsupported file type 😭":
+                logger.warning("检测到不支持的文件类型")
+            else:
+                logger.info(f"AI回复生成成功: ***")
             
             # 将AI回复添加到上下文（带上身份标记）
             context.append(f"(我AI) {response_text}")
