@@ -284,7 +284,7 @@ class InstagramBot:
             return ""
 
     def get_ai_response(self, message, thread_id):
-        """生成AI回复，考虑对话上下文"""
+        """生成AI回复，考虑对话上下文，并利用上下文缓存"""
         try:
             logger.info(f"正在生成AI回复，用户消息: {message}")
             
@@ -294,53 +294,45 @@ class InstagramBot:
             
             context = self.conversation_contexts[thread_id]
             
-            # 添加新消息到上下文（带上身份标记）
-            context.append(f"(用户) {message}")
-            
-            # 如果上下文超出限制，进行总结并添加到开头
-            if len(context) >= self.max_context_length:
-                context_text = "\n".join(context)
-                try:
-                    summary = self.summarize_context(context_text)
-                    if summary:
-                        context.insert(0, f"(历史总结) {summary}")
-                except Exception as e:
-                    logger.error(f"总结上下文失败: {str(e)}")
-            
-            # 构建完整的上下文消息列表
-            messages = [
-                {"role": "system", "content": """你是个回复机器人，帮主人临时接管消息，避免被发现。
+            # 构建固定的系统提示和历史对话消息列表（这部分会被缓存）
+            cached_messages = [
+                {"role": "system", "content": """Things to do:
+1. Language style:
+- Use slang or colloquialisms, keep it short and concise (word count for answers ≈ word count for questions, omit periods, make commas, blur the language)
+- Talk naturally like a human being, avoid linear logic
+- Use the same language as the other person
 
-要做的事：
-1. 语言风格：
-- 用俚语或口语，简短精炼（回答字数≈问题字数，省略句号，要加逗号，语言模糊点）
-- 自然像人类聊天，避免线性逻辑
-- 使用与对方相同的语言回复（如果对方用英文就用英文，用中文就用中文）
+2. attitude:
+- Stay positive
+- Don't dismiss the other person's ideas or requests.
+- Do not negate the other person's point of view or request.
+- When challenged, come back and do not negate what was said before.
 
-2. 态度：
-- 保持积极
-- 不要否定对方的观点和要求
-- 即使不同意也要委婉表达
-- 遇到质疑要圆回来，不否定之前的话
-
-禁止做的事：
-- 主观观点：禁止带主观看法
-- 事实信息：禁止提今天做的事、作业相关、未来计划
-- 隐藏身份：高一学生（避免提到）"""}
+Do not negate what you have said before:
+- Subjective Opinions: Do not bring up subjective opinions.
+- Factual information: Don't mention what you did today, homework, or future plans.
+- Hidden identity: first-year students (avoid mentioning them)"""}
             ]
             
-            # 添加历史对话作为上下文
-            for ctx_message in context[:-1]:  # 除了最新消息
+            # 添加历史对话作为上下文（这部分也会被缓存）
+            for ctx_message in context:
                 role = "user" if "(用户)" in ctx_message else "assistant"
-                # 移除身份标记，只保留消息内容
                 content = ctx_message.replace("(用户) ", "").replace("(我AI) ", "").replace("(历史总结) ", "")
-                messages.append({"role": role, "content": content})
+                cached_messages.append({"role": role, "content": content})
             
-            # 添加最新消息
-            messages.append({"role": "user", "content": message})
+            # 添加新消息（这部分不会被缓存）
+            messages = cached_messages + [{"role": "user", "content": message}]
             
             time.sleep(random.uniform(1, 3))
-            ai_response = create_chat_completion(messages)
+            response = create_chat_completion(messages)
+            
+            # 记录缓存命中状态
+            if hasattr(response, 'usage') and response.usage:
+                cache_hit = getattr(response.usage, 'prompt_cache_hit_tokens', 0)
+                cache_miss = getattr(response.usage, 'prompt_cache_miss_tokens', 0)
+                logger.info(f"缓存状态 - 命中tokens: {cache_hit}, 未命中tokens: {cache_miss}")
+            
+            ai_response = response.choices[0].message.content
             logger.info(f"AI回复生成成功: {ai_response}")
             
             # 将AI回复添加到上下文（带上身份标记）
