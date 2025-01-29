@@ -257,14 +257,14 @@ class InstagramBot:
     def summarize_context(self, context):
         """使用AI总结对话上下文"""
         try:
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="deepseek-chat",
                 messages=[
                     {"role": "system", "content": "请将以下对话总结为20字以内的要点，保留关键信息。"},
                     {"role": "user", "content": context}
                 ]
             )
-            summary = response.choices[0].message['content'].strip()
+            summary = response.choices[0].message.content.strip()
             logger.info(f"对话上下文总结: {summary}")
             return summary
         except Exception as e:
@@ -321,12 +321,12 @@ class InstagramBot:
             messages.append({"role": "user", "content": message})
             
             time.sleep(random.uniform(1, 3))
-            response = openai.ChatCompletion.create(
+            response = openai.chat.completions.create(
                 model="deepseek-chat",
                 messages=messages
             )
             
-            ai_response = response.choices[0].message['content']
+            ai_response = response.choices[0].message.content
             logger.info(f"AI回复生成成功: {ai_response}")
             
             # 将AI回复添加到上下文（带上身份标记）
@@ -433,26 +433,28 @@ class InstagramBot:
                         if not unread_threads and not pending_threads:
                             logger.info("第二次检查仍无消息，退出监听")
                             return
-                        first_check = False
                 else:
                     last_message_time = time.time()  # 更新最后收到消息的时间
-                    first_check = False  # 不再是首次检查
+                    if first_check:  # 首次检查有消息，进入聊天模式
+                        logger.info("首次检查有新消息，进入聊天模式")
+                    first_check = False
                 
-                # 检查是否需要退出
-                if time_since_last_message > 600:  # 10分钟无消息
-                    logger.info("超过10分钟没有新消息，退出监听")
-                    return
-                
-                # 根据无消息时长设置检查间隔
-                if time_since_last_message <= 60:  # 1分钟内
-                    check_interval = random.uniform(3, 6)
-                elif time_since_last_message <= 300:  # 1-5分钟
-                    check_interval = random.uniform(18, 22)  # 约20秒
-                else:  # 5-10分钟
-                    check_interval = random.uniform(55, 65)  # 约1分钟
-                
-                logger.info(f"下次检查间隔: {check_interval:.1f}秒")
-                time.sleep(check_interval)
+                # 如果不是首次检查，根据无消息时长决定检查间隔或退出
+                if not first_check:
+                    # 检查是否需要退出（5分钟无消息）
+                    if time_since_last_message > 300:  # 5分钟
+                        logger.info("超过5分钟没有新消息，退出监听")
+                        return
+                    
+                    # 根据无消息时长设置检查间隔
+                    if time_since_last_message <= 60:  # 1分钟内
+                        check_interval = random.uniform(3, 6)
+                        logger.info(f"1分钟内，设置检查间隔: {check_interval:.1f}秒")
+                    else:  # 1-5分钟
+                        check_interval = random.uniform(25, 35)  # 约30秒
+                        logger.info(f"超过1分钟无消息，设置检查间隔: {check_interval:.1f}秒")
+                    
+                    time.sleep(check_interval)
                 
             except Exception as e:
                 logger.error(f"消息处理出错: {str(e)}")
