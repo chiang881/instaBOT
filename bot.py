@@ -15,6 +15,7 @@ from instagrapi.exceptions import (
     FeedbackRequired, PleaseWaitFewMinutes, LoginRequired,
     ChallengeError, ChallengeSelfieCaptcha, ChallengeUnknownStep
 )
+import os
 
 # 配置日志
 logging.basicConfig(
@@ -23,13 +24,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 配置OpenAI
-openai.api_key = "sk-0c519a85159e4f0c84ae2b78f7e90767"
-openai.api_base = "https://api.deepseek.com/v1"  # Deepseek使用api_base
+# 从环境变量获取配置
+INSTAGRAM_USERNAME = os.getenv('INSTAGRAM_USERNAME', '')
+INSTAGRAM_PASSWORD = os.getenv('INSTAGRAM_PASSWORD', '')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_API_BASE = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
 
-# Gmail验证码邮箱配置
-CHALLENGE_EMAIL = "your_email@gmail.com"  # 替换为你的Gmail邮箱
-CHALLENGE_PASSWORD = "your_password"  # 替换为你的Gmail密码
+# 配置OpenAI
+openai.api_key = OPENAI_API_KEY
+openai.api_base = OPENAI_API_BASE
+
+# Gmail验证码邮箱配置（可选）
+CHALLENGE_EMAIL = os.getenv('GMAIL_USERNAME', '')  # Gmail邮箱
+CHALLENGE_PASSWORD = os.getenv('GMAIL_PASSWORD', '')  # Gmail密码
 
 def get_code_from_email(username):
     """从Gmail获取验证码"""
@@ -586,10 +593,6 @@ class InstagramBot:
             self.handle_exception(e)
 
 if __name__ == "__main__":
-    # Instagram账号信息
-    INSTAGRAM_USERNAME = "jzj6688"
-    INSTAGRAM_PASSWORD = "#iw#Q&4+TES9)e&"
-    
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
     
     try:

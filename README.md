@@ -16,17 +16,15 @@
 
 ## 配置说明
 
-1. Instagram 账号配置（在 bot.py 中）：
-```python
-INSTAGRAM_USERNAME = "your_username"
-INSTAGRAM_PASSWORD = "your_password"
-```
+需要在 GitHub 仓库的 Settings -> Secrets and variables -> Actions 中添加以下 Secrets：
 
-2. OpenAI 配置：
-```python
-openai.api_key = "your_api_key"
-openai.api_base = "your_api_base"
-```
+1. Instagram 账号配置：
+- `INSTAGRAM_USERNAME`: Instagram 用户名
+- `INSTAGRAM_PASSWORD`: Instagram 密码
+
+2. OpenAI/Deepseek 配置：
+- `OPENAI_API_KEY`: API密钥
+- `OPENAI_API_BASE`: API基础URL（默认为 https://api.deepseek.com/v1）
 
 ## 自动化运行
 
@@ -38,4 +36,5 @@ openai.api_base = "your_api_base"
 ## 注意事项
 
 1. 建议使用私有仓库部署
-2. 请遵守 Instagram 的使用条款和限制 
+2. 请遵守 Instagram 的使用条款和限制
+3. 确保所有敏感信息都存储在 GitHub Secrets 中 
