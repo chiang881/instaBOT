@@ -277,7 +277,7 @@ class InstagramBot:
                 {"role": "user", "content": context}
             ]
             summary = create_chat_completion(messages).strip()
-            logger.info(f"对话上下文总结: {summary}")
+            logger.info(f"对话上下文总结: ***")
             return summary
         except Exception as e:
             logger.error(f"总结上下文失败: {str(e)}")
@@ -286,7 +286,7 @@ class InstagramBot:
     def get_ai_response(self, message, thread_id):
         """生成AI回复，考虑对话上下文，并利用上下文缓存"""
         try:
-            logger.info(f"正在生成AI回复，用户消息: {message}")
+            logger.info(f"正在生成AI回复，用户消息: ***")
             
             # 获取或初始化对话上下文
             if thread_id not in self.conversation_contexts:
@@ -333,7 +333,7 @@ Do not negate what you have said before:
                 logger.info(f"缓存状态 - 命中tokens: {cache_hit}, 未命中tokens: {cache_miss}")
             
             ai_response = response.choices[0].message.content
-            logger.info(f"AI回复生成成功: {ai_response}")
+            logger.info(f"AI回复生成成功: ***")
             
             # 将AI回复添加到上下文（带上身份标记）
             context.append(f"(我AI) {ai_response}")
@@ -365,7 +365,7 @@ Do not negate what you have said before:
                 # 只处理文本消息
                 if latest_message.item_type == 'text' and latest_message.text:
                     user_message = latest_message.text
-                    logger.info(f"收到新消息 [对话ID: {thread.id}]: {user_message}")
+                    logger.info(f"收到新消息 [对话ID: {thread.id}]: ***")
                     
                     # 生成AI回复
                     ai_response = self.get_ai_response(user_message, thread.id)
@@ -374,7 +374,7 @@ Do not negate what you have said before:
                     try:
                         # 使用direct_answer发送回复
                         self.client.direct_answer(thread.id, ai_response)
-                        logger.info(f"回复成功 [对话ID: {thread.id}] - 用户消息: {user_message} -> AI回复: {ai_response}")
+                        logger.info(f"回复成功 [对话ID: {thread.id}] - 消息已发送")
                         self.processed_messages.add(latest_message.id)
                         self.message_count += 1
                     except Exception as e:
