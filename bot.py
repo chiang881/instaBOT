@@ -92,7 +92,7 @@ def create_chat_completion(messages):
         model="deepseek-chat",
         messages=messages
     )
-    return response.choices[0].message.content
+    return response.choices[0].message['content']  # 使用字典访问方式
 
 class InstagramBot:
     def __init__(self, username, password):
