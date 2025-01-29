@@ -324,21 +324,26 @@ Do not negate what you have said before:
             messages = cached_messages + [{"role": "user", "content": message}]
             
             time.sleep(random.uniform(1, 3))
-            response = create_chat_completion(messages)
+            ai_response = create_chat_completion(messages)
             
-            # 记录缓存命中状态
-            if hasattr(response, 'usage') and response.usage:
-                cache_hit = getattr(response.usage, 'prompt_cache_hit_tokens', 0)
-                cache_miss = getattr(response.usage, 'prompt_cache_miss_tokens', 0)
+            # 记录缓存命中状态（如果有的话）
+            if isinstance(ai_response, dict) and 'usage' in ai_response:
+                cache_hit = ai_response['usage'].get('prompt_cache_hit_tokens', 0)
+                cache_miss = ai_response['usage'].get('prompt_cache_miss_tokens', 0)
                 logger.info(f"缓存状态 - 命中tokens: {cache_hit}, 未命中tokens: {cache_miss}")
             
-            ai_response = response.choices[0].message.content
+            # 如果返回的是字符串，直接使用；如果是对象，则提取内容
+            if isinstance(ai_response, str):
+                response_text = ai_response
+            else:
+                response_text = ai_response.choices[0].message.content
+                
             logger.info(f"AI回复生成成功: ***")
             
             # 将AI回复添加到上下文（带上身份标记）
-            context.append(f"(我AI) {ai_response}")
+            context.append(f"(我AI) {response_text}")
             
-            return ai_response
+            return response_text
         except Exception as e:
             logger.error(f"AI回复生成失败: {str(e)}")
             return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭"
