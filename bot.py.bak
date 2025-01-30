@@ -17,10 +17,6 @@ from instagrapi.exceptions import (
 )
 import os
 import requests
-import base64
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 # 配置日志
 logging.basicConfig(
@@ -36,7 +32,6 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 OPENAI_API_BASE = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
 LINGYI_API_KEY = os.getenv('LINGYI_API_KEY', '')
 LINGYI_API_BASE = os.getenv('LINGYI_API_BASE', 'https://api.lingyiwanwu.com/v1/chat/completions')
-CHAT_HISTORY_KEY = os.getenv('CHAT_HISTORY_KEY', '')  # 用于加密聊天记录的密钥
 
 # 配置OpenAI
 openai.api_key = OPENAI_API_KEY
@@ -150,80 +145,6 @@ def create_chat_completion(messages, use_lingyi=False):
         logger.error(f"AI 调用失败: {str(e)}")
         return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
 
-class ChatHistoryManager:
-    def __init__(self, encryption_key):
-        self.conversations = {}  # {thread_id: [messages]}
-        # 生成加密密钥
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=b'instagram_bot_salt',  # 固定salt
-            iterations=100000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(encryption_key.encode()))
-        self.cipher_suite = Fernet(key)
-        
-        # 创建存储目录
-        os.makedirs('chat_history', exist_ok=True)
-    
-    def add_message(self, thread_id, role, content):
-        """添加新消息到对话历史"""
-        if thread_id not in self.conversations:
-            self.conversations[thread_id] = []
-            
-        # 确保thread_id是字符串
-        thread_id = str(thread_id)
-        
-        message = {
-            'timestamp': datetime.now().isoformat(),  # 使用ISO格式的字符串
-            'role': role,
-            'content': content
-        }
-        self.conversations[thread_id].append(message)
-        
-        # 保存到文件
-        self.save_conversation(thread_id)
-    
-    def save_conversation(self, thread_id):
-        """保存单个对话到加密文件"""
-        thread_id = str(thread_id)  # 确保thread_id是字符串
-        if thread_id not in self.conversations:
-            return
-            
-        conversation = self.conversations[thread_id]
-        if not conversation:
-            return
-            
-        # 加密对话内容
-        data = json.dumps(conversation, ensure_ascii=False)  # 支持中文字符
-        encrypted_data = self.cipher_suite.encrypt(data.encode('utf-8'))
-        
-        # 保存到文件
-        filename = f'chat_history/conversation_{thread_id}.enc'
-        with open(filename, 'wb') as f:
-            f.write(encrypted_data)
-    
-    def save_all_conversations(self):
-        """保存所有对话"""
-        for thread_id in self.conversations:
-            self.save_conversation(thread_id)
-    
-    def load_conversation(self, thread_id):
-        """从文件加载对话"""
-        thread_id = str(thread_id)  # 确保thread_id是字符串
-        filename = f'chat_history/conversation_{thread_id}.enc'
-        if not os.path.exists(filename):
-            return []
-            
-        try:
-            with open(filename, 'rb') as f:
-                encrypted_data = f.read()
-            data = self.cipher_suite.decrypt(encrypted_data)
-            return json.loads(data.decode('utf-8'))
-        except Exception as e:
-            logger.error(f"加载对话历史失败: {str(e)}")
-            return []
-
 class InstagramBot:
     def __init__(self, username, password):
         self.client = Client()
@@ -238,9 +159,7 @@ class InstagramBot:
         # 对话上下文管理
         self.conversation_contexts = {}  # 用于存储每个对话的上下文 {thread_id: [messages]}
         self.max_context_length = 20  # 最大上下文长度
-        
-        # 聊天历史管理
-        self.chat_history = ChatHistoryManager(CHAT_HISTORY_KEY)
+        self.load_conversation_contexts()  # 加载历史对话上下文
         
         # 设置验证码处理器
         self.client.challenge_code_handler = challenge_code_handler
@@ -423,29 +342,30 @@ class InstagramBot:
             
             # 构建消息列表
             messages = [
-                {"role": "system", "content": """Things to do:
-1. Language style:
-- Use slang or colloquialisms, keep it short and concise (word count for answers ≈ word count for questions, omit periods, make commas, blur the language)
-- Talk naturally like a human being, avoid linear logic
-- Use the same language as the other person
-
-2. attitude:
-- Stay positive
-- Don't dismiss the other person's ideas or requests.
-- Do not negate the other person's point of view or request.
-- When challenged, come back and do not negate what was said before.
-
-Do not negate what you have said before:
-- Subjective Opinions: Do not bring up subjective opinions.
-- Factual information: Don't mention what you did today, homework, or future plans.
-- Hidden identity: first-year students (avoid mentioning them)"""}
+                {
+                    "role": "system", 
+                    "content": "you are a robot"
+                }
             ]
             
             # 添加历史对话作为上下文
             for ctx_message in context:
-                role = "user" if "(用户)" in ctx_message else "assistant"
-                content = ctx_message.replace("(用户) ", "").replace("(我AI) ", "").replace("(历史总结) ", "")
-                messages.append({"role": role, "content": content})
+                if "(用户)" in ctx_message:
+                    messages.append({
+                        "role": "user",
+                        "content": ctx_message.replace("(用户) ", "")
+                    })
+                elif "(我AI)" in ctx_message:
+                    messages.append({
+                        "role": "assistant",
+                        "content": ctx_message.replace("(我AI) ", "")
+                    })
+                elif "(历史总结)" in ctx_message:
+                    messages.append({
+                        "role": "tool",
+                        "content": ctx_message.replace("(历史总结) ", ""),
+                        "tool_call_id": "call_" + ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', k=32))
+                    })
             
             # 添加新消息
             messages.append({"role": "user", "content": message})
@@ -463,10 +383,40 @@ Do not negate what you have said before:
             # 将AI回复添加到上下文（带上身份标记）
             context.append(f"(我AI) {response_text}")
             
+            # 如果上下文长度超过限制，移除最早的消息
+            while len(context) > self.max_context_length:
+                context.pop(0)
+            
             return response_text
         except Exception as e:
             logger.error(f"AI回复生成失败: {str(e)}")
             return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭"
+
+    def save_conversation_contexts(self):
+        """保存对话上下文到文件"""
+        try:
+            contexts_data = {
+                "last_updated": datetime.now().isoformat(),
+                "contexts": self.conversation_contexts
+            }
+            with open('conversation_contexts.json', 'w', encoding='utf-8') as f:
+                json.dump(contexts_data, f, ensure_ascii=False, indent=2)
+            logger.info("对话上下文已保存")
+        except Exception as e:
+            logger.error(f"保存对话上下文失败: {str(e)}")
+
+    def load_conversation_contexts(self):
+        """从文件加载对话上下文"""
+        try:
+            if os.path.exists('conversation_contexts.json'):
+                with open('conversation_contexts.json', 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.conversation_contexts = data.get("contexts", {})
+                    logger.info(f"已加载对话上下文，最后更新时间: {data.get('last_updated')}")
+            else:
+                logger.info("未找到历史对话上下文文件")
+        except Exception as e:
+            logger.error(f"加载对话上下文失败: {str(e)}")
 
     def process_thread(self, thread):
         """处理单个对话线程"""
@@ -475,108 +425,71 @@ Do not negate what you have said before:
                 logger.warning("已达到每日消息限制")
                 return
                 
-            # 获取完整的对话内容（最近5条消息）
+            # 获取完整的对话内容
             try:
-                full_thread = self.client.direct_thread(str(thread.id), amount=5)  # 确保thread.id是字符串
-                if not full_thread.messages:
+                full_thread = self.client.direct_thread(thread.id, amount=1)
+            if not full_thread.messages:
+                return
+                
+            latest_message = full_thread.messages[0]
+            
+                # 检查是否已处理过该消息
+            if latest_message.id in self.processed_messages:
+                return
+                
+                # 标记消息为已处理，避免重复处理
+                self.processed_messages.add(latest_message.id)
+                
+                # 处理不同类型的消息
+            if latest_message.item_type == 'text' and latest_message.text:
+                user_message = latest_message.text
+                    logger.info(f"收到新消息 [对话ID: {thread.id}]: ***")
+                
+                    # 生成AI回复
+                    ai_response = self.get_ai_response(user_message, thread.id)
+                time.sleep(random.uniform(2, 5))
+                
+                try:
+                        # 使用direct_answer发送回复
+                        self.client.direct_answer(thread.id, ai_response)
+                        logger.info(f"回复成功 [对话ID: {thread.id}] - 消息已发送")
+                        self.message_count += 1
+                        # 保存对话上下文
+                        self.save_conversation_contexts()
+                    except Exception as e:
+                        logger.error(f"发送回复失败: {str(e)}")
+                        # 尝试使用direct_send作为备选方案
+                        try:
+                            self.client.direct_send(ai_response, thread_ids=[thread.id])
+                            logger.info(f"使用备选方案回复成功 [对话ID: {thread.id}]")
+                            self.message_count += 1
+                            # 保存对话上下文
+                            self.save_conversation_contexts()
+                        except Exception as e2:
+                            logger.error(f"备选方案也失败了: {str(e2)}")
+                            self.handle_exception(e2)
+                
+                elif latest_message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
+                    logger.info(f"收到媒体消息 [对话ID: {thread.id}]: {latest_message.item_type}")
+                    response = "Unsupported file type 😭"
+                    try:
+                        self.client.direct_answer(thread.id, response)
+                        logger.info(f"已回复不支持的文件类型提示 [对话ID: {thread.id}]")
+                    self.message_count += 1
+                except Exception as e:
+                        logger.error(f"回复媒体消息失败: {str(e)}")
+                        self.handle_exception(e)
+                
+                else:
+                    logger.info(f"收到未知类型消息 [对话ID: {thread.id}]: {latest_message.item_type}")
                     return
-                
-                # 获取未处理的连续消息
-                unprocessed_messages = []
-                for message in full_thread.messages[::-1]:  # 从旧到新处理
-                    if message.id in self.processed_messages:
-                        break
-                    if message.item_type == 'text' and message.text:
-                        unprocessed_messages.append(message)
-                    elif message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
-                        # 如果遇到媒体消息，单独处理并中断合并
-                        if unprocessed_messages:
-                            self.handle_text_messages(unprocessed_messages, str(thread.id))
-                            unprocessed_messages = []
-                        self.handle_media_message(message, str(thread.id))
-                
-                # 处理剩余的文本消息
-                if unprocessed_messages:
-                    self.handle_text_messages(unprocessed_messages, str(thread.id))
                 
             except Exception as e:
                 logger.error(f"处理消息时出错: {str(e)}")
-                self.handle_exception(e)
+                    self.handle_exception(e)
                 
         except Exception as e:
             logger.error(f"处理对话线程时出错: {str(e)}")
-            self.handle_exception(e)
-
-    def handle_text_messages(self, messages, thread_id):
-        """处理多条文本消息"""
-        try:
-            thread_id = str(thread_id)  # 确保thread_id是字符串
-            # 合并消息内容
-            if len(messages) == 1:
-                combined_message = messages[0].text
-            else:
-                combined_message = "\n".join([f"{i+1}. {msg.text}" for i, msg in enumerate(messages)])
-            
-            logger.info(f"收到 {len(messages)} 条新消息 [对话ID: {thread_id}]: ***")
-            
-            # 记录用户消息
-            for message in messages:
-                self.chat_history.add_message(thread_id, 'user', message.text)
-            
-            # 生成AI回复
-            ai_response = self.get_ai_response(combined_message, thread_id)
-            time.sleep(random.uniform(2, 5))
-            
-            try:
-                # 使用direct_answer发送回复
-                self.client.direct_answer(thread_id, ai_response)
-                logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
-                # 记录AI回复
-                self.chat_history.add_message(thread_id, 'assistant', ai_response)
-                # 标记所有消息为已处理
-                for message in messages:
-                    self.processed_messages.add(message.id)
-                self.message_count += 1
-            except Exception as e:
-                logger.error(f"发送回复失败: {str(e)}")
-                # 尝试使用direct_send作为备选方案
-                try:
-                    self.client.direct_send(ai_response, thread_ids=[thread_id])
-                    logger.info(f"使用备选方案回复成功 [对话ID: {thread_id}]")
-                    # 记录AI回复
-                    self.chat_history.add_message(thread_id, 'assistant', ai_response)
-                    # 标记所有消息为已处理
-                    for message in messages:
-                        self.processed_messages.add(message.id)
-                    self.message_count += 1
-                except Exception as e2:
-                    logger.error(f"备选方案也失败了: {str(e2)}")
-                    self.handle_exception(e2)
-        except Exception as e:
-            logger.error(f"处理文本消息时出错: {str(e)}")
-            self.handle_exception(e)
-
-    def handle_media_message(self, message, thread_id):
-        """处理媒体消息"""
-        try:
-            thread_id = str(thread_id)  # 确保thread_id是字符串
-            logger.info(f"收到媒体消息 [对话ID: {thread_id}]: {message.item_type}")
-            # 记录媒体消息
-            self.chat_history.add_message(thread_id, 'user', f"[{message.item_type}]")
-            
-            response = "Unsupported file type 😭"
-            try:
-                self.client.direct_answer(thread_id, response)
-                logger.info(f"已回复不支持的文件类型提示 [对话ID: {thread_id}]")
-                # 记录AI回复
-                self.chat_history.add_message(thread_id, 'assistant', response)
-                self.processed_messages.add(message.id)
-                self.message_count += 1
-            except Exception as e:
-                logger.error(f"回复媒体消息失败: {str(e)}")
-                self.handle_exception(e)
-        except Exception as e:
-            logger.error(f"处理媒体消息时出错: {str(e)}")
             self.handle_exception(e)
 
     def handle_messages(self):
@@ -598,28 +511,28 @@ Do not negate what you have said before:
             has_new_message = False
             try:
                 # 检查未读消息
-                unread_threads = self.client.direct_threads(amount=20, selected_filter="unread")
-                if unread_threads:
-                    logger.info(f"发现 {len(unread_threads)} 个未读对话")
-                    is_processing = True
-                    for thread in unread_threads:
-                        self.process_thread(thread)
-                    has_new_message = True
-                    last_message_time = time.time()  # 更新最后活动时间
-                    is_processing = False
-                    consecutive_errors = 0  # 重置错误计数
+                    unread_threads = self.client.direct_threads(amount=20, selected_filter="unread")
+                    if unread_threads:
+                        logger.info(f"发现 {len(unread_threads)} 个未读对话")
+                is_processing = True
+                        for thread in unread_threads:
+                            self.process_thread(thread)
+                has_new_message = True
+                last_message_time = time.time()  # 更新最后活动时间
+                is_processing = False
+                consecutive_errors = 0  # 重置错误计数
                 
                 # 检查待处理消息
-                pending_threads = self.client.direct_pending_inbox(20)
-                if pending_threads:
-                    logger.info(f"发现 {len(pending_threads)} 个待处理对话")
-                    is_processing = True
-                    for thread in pending_threads:
-                        self.process_thread(thread)
-                    has_new_message = True
-                    last_message_time = time.time()  # 更新最后活动时间
-                    is_processing = False
-                    consecutive_errors = 0  # 重置错误计数
+                    pending_threads = self.client.direct_pending_inbox(20)
+                    if pending_threads:
+                        logger.info(f"发现 {len(pending_threads)} 个待处理对话")
+                is_processing = True
+                        for thread in pending_threads:
+                            self.process_thread(thread)
+                has_new_message = True
+                last_message_time = time.time()  # 更新最后活动时间
+                is_processing = False
+                consecutive_errors = 0  # 重置错误计数
                 
                 if not has_new_message and not is_processing:
                     logger.info("没有新消息")
@@ -779,17 +692,12 @@ Do not negate what you have said before:
                     message_count = 0
                     self.random_action()
                 
-                # 保存所有对话历史
-                self.chat_history.save_all_conversations()
-                
                 # 随机延迟10-30秒
                 time.sleep(random.uniform(10, 30))
                 
         except Exception as e:
             logger.error(f"运行时出错: {str(e)}")
             self.handle_exception(e)
-            # 确保在错误发生时也保存对话历史
-            self.chat_history.save_all_conversations()
 
 if __name__ == "__main__":
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)

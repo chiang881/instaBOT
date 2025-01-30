@@ -26,6 +26,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install cryptography  # 添加加密库
         
     - name: Log trigger info
       if: github.event_name == 'repository_dispatch'
@@ -51,4 +52,20 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
         LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
-        LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }} 
+        LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
+        CHAT_HISTORY_KEY: ${{ secrets.CHAT_HISTORY_KEY }}  # 添加聊天历史加密密钥
+        
+    - name: Upload chat history
+      if: always()  # 即使任务失败也上传
+      uses: actions/upload-artifact@v3
+      with:
+        name: chat-history-${{ github.run_id }}
+        path: chat_history/
+        retention-days: 90  # 保存90天
+        
+    - name: Clean old artifacts
+      if: always()
+      uses: c-hive/gha-remove-artifacts@v1
+      with:
+        age: '90 days'  # 删除90天前的artifacts
+        skip-recent: 5  # 保留最近5次的artifacts 
