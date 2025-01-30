@@ -404,8 +404,11 @@ Do not negate what you have said before:
                 # 检查是否已处理过该消息
                 if latest_message.id in self.processed_messages:
                     return
-                    
-                # 只处理文本消息
+                
+                # 标记消息为已处理，避免重复处理
+                self.processed_messages.add(latest_message.id)
+                
+                # 处理不同类型的消息
                 if latest_message.item_type == 'text' and latest_message.text:
                     user_message = latest_message.text
                     logger.info(f"收到新消息 [对话ID: {thread.id}]: ***")
@@ -418,7 +421,6 @@ Do not negate what you have said before:
                         # 使用direct_answer发送回复
                         self.client.direct_answer(thread.id, ai_response)
                         logger.info(f"回复成功 [对话ID: {thread.id}] - 消息已发送")
-                        self.processed_messages.add(latest_message.id)
                         self.message_count += 1
                     except Exception as e:
                         logger.error(f"发送回复失败: {str(e)}")
@@ -426,11 +428,25 @@ Do not negate what you have said before:
                         try:
                             self.client.direct_send(ai_response, thread_ids=[thread.id])
                             logger.info(f"使用备选方案回复成功 [对话ID: {thread.id}]")
-                            self.processed_messages.add(latest_message.id)
                             self.message_count += 1
                         except Exception as e2:
                             logger.error(f"备选方案也失败了: {str(e2)}")
                             self.handle_exception(e2)
+                
+                elif latest_message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
+                    logger.info(f"收到媒体消息 [对话ID: {thread.id}]: {latest_message.item_type}")
+                    response = "Unsupported file type 😭"
+                    try:
+                        self.client.direct_answer(thread.id, response)
+                        logger.info(f"已回复不支持的文件类型提示 [对话ID: {thread.id}]")
+                        self.message_count += 1
+                    except Exception as e:
+                        logger.error(f"回复媒体消息失败: {str(e)}")
+                        self.handle_exception(e)
+                
+                else:
+                    logger.info(f"收到未知类型消息 [对话ID: {thread.id}]: {latest_message.item_type}")
+                    return
                 
             except Exception as e:
                 logger.error(f"处理消息时出错: {str(e)}")
@@ -447,6 +463,7 @@ Do not negate what you have said before:
         last_message_time = time.time()  # 上次收到消息的时间
         first_check = True  # 标记是否是首次检查
         is_processing = False  # 标记是否正在处理消息
+        consecutive_errors = 0  # 连续错误计数
         
         while True:
             current_time = time.time()
@@ -467,6 +484,7 @@ Do not negate what you have said before:
                         has_new_message = True
                         last_message_time = time.time()  # 更新最后活动时间
                     is_processing = False
+                    consecutive_errors = 0  # 重置错误计数
                 
                 # 检查待处理消息
                 pending_threads = self.client.direct_pending_inbox(20)
@@ -478,6 +496,7 @@ Do not negate what you have said before:
                         has_new_message = True
                         last_message_time = time.time()  # 更新最后活动时间
                     is_processing = False
+                    consecutive_errors = 0  # 重置错误计数
                 
                 if not has_new_message and not is_processing:
                     logger.info("没有新消息")
@@ -497,9 +516,9 @@ Do not negate what you have said before:
                 
                 # 如果不是首次检查且没有正在处理的消息，根据无消息时长决定检查间隔或退出
                 if not first_check and not is_processing:
-                    # 检查是否需要退出（5分钟无消息）
-                    if time_since_last_message > 300:  # 5分钟
-                        logger.info("超过5分钟没有新消息，退出监听")
+                    # 检查是否需要退出（5分钟无消息或连续错误过多）
+                    if time_since_last_message > 300 or consecutive_errors >= 3:  # 5分钟或3次连续错误
+                        logger.info("超过5分钟没有新消息或连续错误过多，退出监听")
                         return
                     
                     # 根据无消息时长设置检查间隔
@@ -516,6 +535,8 @@ Do not negate what you have said before:
                 logger.error(f"消息处理出错: {str(e)}")
                 self.handle_exception(e)
                 is_processing = False  # 确保处理状态被重置
+                consecutive_errors += 1  # 增加错误计数
+                time.sleep(5)  # 出错后等待一段时间再继续
 
     def browse_feed(self, duration=None):
         """浏览公共随机帖子
