@@ -160,6 +160,9 @@ class InstagramBot:
         self.conversation_contexts = {}  # 用于存储每个对话的上下文 {thread_id: [messages]}
         self.max_context_length = 20  # 最大上下文长度
         
+        # 聊天记录管理
+        self.chat_history = self.load_chat_history()
+        
         # 设置验证码处理器
         self.client.challenge_code_handler = challenge_code_handler
         self.client.change_password_handler = change_password_handler
@@ -196,6 +199,81 @@ class InstagramBot:
         self.client.set_locale("en_US")
         self.client.set_timezone_offset(-7 * 60 * 60)  # Los Angeles UTC-7
         
+    def load_chat_history(self):
+        """加载聊天记录"""
+        try:
+            history_dir = 'chat_histories'
+            if not os.path.exists(history_dir):
+                os.makedirs(history_dir)
+                
+            # 加载主索引文件
+            index_file = os.path.join(history_dir, 'index.json')
+            if os.path.exists(index_file):
+                with open(index_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return {"version": "1.0", "history": {}}
+        except Exception as e:
+            logger.error(f"加载聊天记录失败: {str(e)}")
+            return {"version": "1.0", "history": {}}
+
+    def save_chat_history(self):
+        """保存聊天记录，每个对话保存为独立的文件"""
+        try:
+            history_dir = 'chat_histories'
+            if not os.path.exists(history_dir):
+                os.makedirs(history_dir)
+            
+            # 保存主索引文件
+            index_file = os.path.join(history_dir, 'index.json')
+            with open(index_file, 'w', encoding='utf-8') as f:
+                # 只保存索引信息，不包含具体对话内容
+                index_data = {
+                    "version": self.chat_history["version"],
+                    "history": {k: {"last_update": max(msg["timestamp"] for msg in v) if v else None}
+                              for k, v in self.chat_history["history"].items()}
+                }
+                json.dump(index_data, f, ensure_ascii=False, indent=2)
+            
+            # 分别保存每个对话的历史记录
+            for thread_id, messages in self.chat_history["history"].items():
+                thread_file = os.path.join(history_dir, f'thread_{thread_id}.json')
+                with open(thread_file, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        "thread_id": thread_id,
+                        "messages": messages
+                    }, f, ensure_ascii=False, indent=2)
+            
+            logger.info("聊天记录已保存")
+        except Exception as e:
+            logger.error(f"保存聊天记录失败: {str(e)}")
+
+    def add_to_chat_history(self, thread_id, message_type, content, timestamp=None):
+        """添加消息到聊天记录"""
+        try:
+            if thread_id not in self.chat_history["history"]:
+                self.chat_history["history"][thread_id] = []
+                # 如果存在历史文件，加载历史消息
+                history_dir = 'chat_histories'
+                thread_file = os.path.join(history_dir, f'thread_{thread_id}.json')
+                if os.path.exists(thread_file):
+                    with open(thread_file, 'r', encoding='utf-8') as f:
+                        thread_data = json.load(f)
+                        self.chat_history["history"][thread_id] = thread_data["messages"]
+            
+            # 使用当前时间或指定的时间戳
+            message_time = timestamp or datetime.now().isoformat()
+            
+            message_record = {
+                "type": message_type,  # "user" 或 "assistant"
+                "content": content,
+                "timestamp": message_time
+            }
+            
+            self.chat_history["history"][thread_id].append(message_record)
+            self.save_chat_history()  # 立即保存更改
+        except Exception as e:
+            logger.error(f"添加聊天记录失败: {str(e)}")
+
     def handle_exception(self, e):
         """处理各种异常"""
         if isinstance(e, BadPassword):
@@ -436,6 +514,15 @@ Do not negate what you have said before:
             
             logger.info(f"收到 {len(messages)} 条新消息 [对话ID: {thread_id}]: ***")
             
+            # 记录用户消息
+            for message in messages:
+                self.add_to_chat_history(
+                    thread_id,
+                    "user",
+                    message.text,
+                    datetime.fromtimestamp(message.timestamp).isoformat()
+                )
+            
             # 生成AI回复
             ai_response = self.get_ai_response(combined_message, thread_id)
             time.sleep(random.uniform(2, 5))
@@ -444,6 +531,10 @@ Do not negate what you have said before:
                 # 使用direct_answer发送回复
                 self.client.direct_answer(thread_id, ai_response)
                 logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
+                
+                # 记录AI回复
+                self.add_to_chat_history(thread_id, "assistant", ai_response)
+                
                 # 标记所有消息为已处理
                 for message in messages:
                     self.processed_messages.add(message.id)
@@ -454,6 +545,10 @@ Do not negate what you have said before:
                 try:
                     self.client.direct_send(ai_response, thread_ids=[thread_id])
                     logger.info(f"使用备选方案回复成功 [对话ID: {thread_id}]")
+                    
+                    # 记录AI回复
+                    self.add_to_chat_history(thread_id, "assistant", ai_response)
+                    
                     # 标记所有消息为已处理
                     for message in messages:
                         self.processed_messages.add(message.id)
@@ -469,10 +564,23 @@ Do not negate what you have said before:
         """处理媒体消息"""
         try:
             logger.info(f"收到媒体消息 [对话ID: {thread_id}]: {message.item_type}")
+            
+            # 记录用户的媒体消息
+            self.add_to_chat_history(
+                thread_id,
+                "user",
+                f"[{message.item_type}]",
+                datetime.fromtimestamp(message.timestamp).isoformat()
+            )
+            
             response = "Unsupported file type 😭"
             try:
                 self.client.direct_answer(thread_id, response)
                 logger.info(f"已回复不支持的文件类型提示 [对话ID: {thread_id}]")
+                
+                # 记录AI回复
+                self.add_to_chat_history(thread_id, "assistant", response)
+                
                 self.processed_messages.add(message.id)
                 self.message_count += 1
             except Exception as e:

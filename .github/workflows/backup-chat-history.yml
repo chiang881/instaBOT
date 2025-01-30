@@ -1,0 +1,38 @@
+name: Backup Chat History
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时运行一次
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+    
+    - name: Check for changes in chat histories
+      id: check_changes
+      run: |
+        if [ -d chat_histories ]; then
+          git add chat_histories/
+          if git diff --staged --quiet; then
+            echo "::set-output name=has_changes::false"
+          else
+            echo "::set-output name=has_changes::true"
+          fi
+        else
+          echo "::set-output name=has_changes::false"
+        fi
+    
+    - name: Commit and push if changed
+      if: steps.check_changes.outputs.has_changes == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        current_time=$(date '+%Y-%m-%d %H:%M:%S')
+        git commit -m "chore: 备份聊天记录 - $current_time [skip ci]"
+        git push 
