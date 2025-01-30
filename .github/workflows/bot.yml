@@ -6,6 +6,8 @@ on:
       - main  # 主分支代码推送时触发
   schedule:
     - cron: '0 */3 * * *'  # 每3小时运行一次
+  repository_dispatch:
+    types: [trigger-bot]  # 添加 repository_dispatch 触发器
   workflow_dispatch:  # 允许手动触发
 
 jobs:

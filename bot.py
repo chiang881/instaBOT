@@ -98,23 +98,23 @@ def change_password_handler(username):
 
 def create_chat_completion(messages, use_lingyi=False):
     """创建聊天完成，如果 DeepSeek 失败则使用灵医万物"""
-    if not use_lingyi:
-        try:
-            # 先尝试使用 DeepSeek
-            response = openai.ChatCompletion.create(
-                model="deepseek-chat",
-                messages=messages
-            )
-            content = response.choices[0].message['content']
-            if "None [200] GET" in content:  # DeepSeek API 错误
-                raise Exception("DeepSeek API error")
-            return content, False  # 返回内容和是否需要切换到灵医万物
-        except Exception as e:
-            logger.warning(f"DeepSeek API 调用失败，切换到灵医万物: {str(e)}")
-            use_lingyi = True  # 标记需要切换到灵医万物
-    
-    if use_lingyi:
-        try:
+    try:
+        if not use_lingyi:
+            try:
+                # 先尝试使用 DeepSeek
+                response = openai.ChatCompletion.create(
+                    model="deepseek-chat",
+                    messages=messages
+                )
+                content = response.choices[0].message['content']
+                if "None [200] GET" in content:  # DeepSeek API 错误
+                    raise Exception("DeepSeek API error")
+                return content, False  # 返回内容和是否需要切换到灵医万物
+            except Exception as e:
+                logger.warning(f"DeepSeek API 调用失败，切换到灵医万物: {str(e)}")
+                use_lingyi = True
+        
+        if use_lingyi:
             # 使用灵医万物 API
             headers = {
                 "Authorization": f"Bearer {LINGYI_API_KEY}",
@@ -141,9 +141,9 @@ def create_chat_completion(messages, use_lingyi=False):
                 return content, True
             else:
                 raise Exception(f"灵医万物 API 错误: {response.text}")
-        except Exception as e2:
-            logger.error(f"灵医万物 API 也失败了: {str(e2)}")
-            raise
+    except Exception as e:
+        logger.error(f"AI 调用失败: {str(e)}")
+        return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -446,12 +446,14 @@ Do not negate what you have said before:
         
         last_message_time = time.time()  # 上次收到消息的时间
         first_check = True  # 标记是否是首次检查
+        is_processing = False  # 标记是否正在处理消息
         
         while True:
             current_time = time.time()
             time_since_last_message = current_time - last_message_time  # 距离上次消息的时间
             
-            logger.info(f"正在检查新消息... 当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            if not is_processing:
+                logger.info(f"正在检查新消息... 当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             
             has_new_message = False
             try:
@@ -459,19 +461,25 @@ Do not negate what you have said before:
                 unread_threads = self.client.direct_threads(amount=20, selected_filter="unread")
                 if unread_threads:
                     logger.info(f"发现 {len(unread_threads)} 个未读对话")
+                    is_processing = True
                     for thread in unread_threads:
                         self.process_thread(thread)
                         has_new_message = True
+                        last_message_time = time.time()  # 更新最后活动时间
+                    is_processing = False
                 
                 # 检查待处理消息
                 pending_threads = self.client.direct_pending_inbox(20)
                 if pending_threads:
                     logger.info(f"发现 {len(pending_threads)} 个待处理对话")
+                    is_processing = True
                     for thread in pending_threads:
                         self.process_thread(thread)
                         has_new_message = True
+                        last_message_time = time.time()  # 更新最后活动时间
+                    is_processing = False
                 
-                if not has_new_message:
+                if not has_new_message and not is_processing:
                     logger.info("没有新消息")
                     if first_check:  # 首次检查无消息
                         logger.info("首次检查无消息，等待30秒后重试")
@@ -483,13 +491,12 @@ Do not negate what you have said before:
                             logger.info("第二次检查仍无消息，退出监听")
                             return
                 else:
-                    last_message_time = time.time()  # 更新最后收到消息的时间
                     if first_check:  # 首次检查有消息，进入聊天模式
                         logger.info("首次检查有新消息，进入聊天模式")
                     first_check = False
                 
-                # 如果不是首次检查，根据无消息时长决定检查间隔或退出
-                if not first_check:
+                # 如果不是首次检查且没有正在处理的消息，根据无消息时长决定检查间隔或退出
+                if not first_check and not is_processing:
                     # 检查是否需要退出（5分钟无消息）
                     if time_since_last_message > 300:  # 5分钟
                         logger.info("超过5分钟没有新消息，退出监听")
@@ -508,6 +515,7 @@ Do not negate what you have said before:
             except Exception as e:
                 logger.error(f"消息处理出错: {str(e)}")
                 self.handle_exception(e)
+                is_processing = False  # 确保处理状态被重置
 
     def browse_feed(self, duration=None):
         """浏览公共随机帖子
