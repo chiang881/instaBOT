@@ -11,6 +11,26 @@ const successTemplate = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Instagram Bot Trigger</title>
     <style>
+        :root {
+            --background: #ffffff;
+            --text: #1a1a1a;
+            --text-secondary: #666666;
+            --loader-border: #eeeeee;
+            --loader-active: #000000;
+            --success-color: #00c853;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background: #000000;
+                --text: #ffffff;
+                --text-secondary: #999999;
+                --loader-border: #333333;
+                --loader-active: #ffffff;
+                --success-color: #00e676;
+            }
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             display: flex;
@@ -18,8 +38,8 @@ const successTemplate = `
             align-items: center;
             height: 100vh;
             margin: 0;
-            background: white;
-            color: #1a1a1a;
+            background: var(--background);
+            color: var(--text);
         }
         .container {
             text-align: center;
@@ -28,8 +48,8 @@ const successTemplate = `
         .loader {
             width: 40px;
             height: 40px;
-            border: 3px solid #eee;
-            border-top: 3px solid #000;
+            border: 3px solid var(--loader-border);
+            border-top: 3px solid var(--loader-active);
             border-radius: 50%;
             margin: 20px auto;
             animation: spin 1s linear infinite;
@@ -42,7 +62,7 @@ const successTemplate = `
             height: 40px;
             margin: 20px auto;
             border-radius: 50%;
-            background: #00c853;
+            background: var(--success-color);
             position: relative;
             transform: scale(0);
             opacity: 0;
@@ -53,7 +73,7 @@ const successTemplate = `
             width: 20px;
             height: 10px;
             position: absolute;
-            border: 2px solid white;
+            border: 2px solid var(--background);
             border-top: none;
             border-right: none;
             background: transparent;
@@ -69,10 +89,11 @@ const successTemplate = `
             margin: 1rem 0;
             font-size: 1.1rem;
             font-weight: 500;
+            color: var(--text);
         }
         .redirect-text {
             font-size: 0.9rem;
-            color: #666;
+            color: var(--text-secondary);
             margin-top: 0.5rem;
         }
         @keyframes success {
@@ -122,6 +143,24 @@ const errorTemplate = (message) => `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Error - Instagram Bot Trigger</title>
     <style>
+        :root {
+            --background: #ffffff;
+            --text: #1a1a1a;
+            --text-secondary: #666666;
+            --error-color: #ff3b30;
+            --error-icon-color: #ffffff;
+        }
+        
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --background: #000000;
+                --text: #ffffff;
+                --text-secondary: #999999;
+                --error-color: #ff453a;
+                --error-icon-color: #000000;
+            }
+        }
+        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             display: flex;
@@ -129,8 +168,8 @@ const errorTemplate = (message) => `
             align-items: center;
             height: 100vh;
             margin: 0;
-            background: white;
-            color: #1a1a1a;
+            background: var(--background);
+            color: var(--text);
         }
         .container {
             text-align: center;
@@ -142,7 +181,7 @@ const errorTemplate = (message) => `
             height: 40px;
             margin: 20px auto;
             border-radius: 50%;
-            background: #ff3b30;
+            background: var(--error-color);
             position: relative;
         }
         .error-icon:before,
@@ -151,7 +190,7 @@ const errorTemplate = (message) => `
             position: absolute;
             width: 24px;
             height: 2px;
-            background: white;
+            background: var(--error-icon-color);
             top: 19px;
             left: 8px;
         }
@@ -164,7 +203,7 @@ const errorTemplate = (message) => `
         .error-message {
             margin: 1rem 0;
             font-size: 1rem;
-            color: #666;
+            color: var(--text-secondary);
             white-space: pre-wrap;
             word-break: break-word;
         }
@@ -217,8 +256,34 @@ async function checkWorkflowStatus() {
   }
 }
 
+async function getDeviceInfo() {
+  try {
+    const ipResponse = await fetch('https://api.ipify.org?format=json')
+    const ipData = await ipResponse.json()
+    
+    return {
+      ip: ipData.ip,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      timestamp: new Date().toISOString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    }
+  } catch (error) {
+    console.error('Error getting device info:', error)
+    return {
+      error: 'Failed to get device info',
+      timestamp: new Date().toISOString()
+    }
+  }
+}
+
 async function handleRequest(request) {
   try {
+    // 获取设备信息
+    const deviceInfo = await getDeviceInfo()
+    console.log('Device info:', deviceInfo)
+
     // 检查是否有正在运行或最近运行的工作流
     const isRunning = await checkWorkflowStatus()
     
@@ -245,7 +310,10 @@ async function handleRequest(request) {
         'User-Agent': 'InstaBotTrigger/1.0'
       },
       body: JSON.stringify({
-        event_type: 'trigger-bot'
+        event_type: 'trigger-bot',
+        client_payload: {
+          device_info: deviceInfo
+        }
       })
     })
 
