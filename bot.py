@@ -393,60 +393,29 @@ Do not negate what you have said before:
                 logger.warning("已达到每日消息限制")
                 return
                 
-            # 获取完整的对话内容
+            # 获取完整的对话内容（最近5条消息）
             try:
-                full_thread = self.client.direct_thread(thread.id, amount=1)
+                full_thread = self.client.direct_thread(thread.id, amount=5)
                 if not full_thread.messages:
                     return
-                    
-                latest_message = full_thread.messages[0]
                 
-                # 检查是否已处理过该消息
-                if latest_message.id in self.processed_messages:
-                    return
+                # 获取未处理的连续消息
+                unprocessed_messages = []
+                for message in full_thread.messages[::-1]:  # 从旧到新处理
+                    if message.id in self.processed_messages:
+                        break
+                    if message.item_type == 'text' and message.text:
+                        unprocessed_messages.append(message)
+                    elif message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
+                        # 如果遇到媒体消息，单独处理并中断合并
+                        if unprocessed_messages:
+                            self.handle_text_messages(unprocessed_messages, thread.id)
+                            unprocessed_messages = []
+                        self.handle_media_message(message, thread.id)
                 
-                # 标记消息为已处理，避免重复处理
-                self.processed_messages.add(latest_message.id)
-                
-                # 处理不同类型的消息
-                if latest_message.item_type == 'text' and latest_message.text:
-                    user_message = latest_message.text
-                    logger.info(f"收到新消息 [对话ID: {thread.id}]: ***")
-                    
-                    # 生成AI回复
-                    ai_response = self.get_ai_response(user_message, thread.id)
-                    time.sleep(random.uniform(2, 5))
-                    
-                    try:
-                        # 使用direct_answer发送回复
-                        self.client.direct_answer(thread.id, ai_response)
-                        logger.info(f"回复成功 [对话ID: {thread.id}] - 消息已发送")
-                        self.message_count += 1
-                    except Exception as e:
-                        logger.error(f"发送回复失败: {str(e)}")
-                        # 尝试使用direct_send作为备选方案
-                        try:
-                            self.client.direct_send(ai_response, thread_ids=[thread.id])
-                            logger.info(f"使用备选方案回复成功 [对话ID: {thread.id}]")
-                            self.message_count += 1
-                        except Exception as e2:
-                            logger.error(f"备选方案也失败了: {str(e2)}")
-                            self.handle_exception(e2)
-                
-                elif latest_message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
-                    logger.info(f"收到媒体消息 [对话ID: {thread.id}]: {latest_message.item_type}")
-                    response = "Unsupported file type 😭"
-                    try:
-                        self.client.direct_answer(thread.id, response)
-                        logger.info(f"已回复不支持的文件类型提示 [对话ID: {thread.id}]")
-                        self.message_count += 1
-                    except Exception as e:
-                        logger.error(f"回复媒体消息失败: {str(e)}")
-                        self.handle_exception(e)
-                
-                else:
-                    logger.info(f"收到未知类型消息 [对话ID: {thread.id}]: {latest_message.item_type}")
-                    return
+                # 处理剩余的文本消息
+                if unprocessed_messages:
+                    self.handle_text_messages(unprocessed_messages, thread.id)
                 
             except Exception as e:
                 logger.error(f"处理消息时出错: {str(e)}")
@@ -454,6 +423,63 @@ Do not negate what you have said before:
                 
         except Exception as e:
             logger.error(f"处理对话线程时出错: {str(e)}")
+            self.handle_exception(e)
+
+    def handle_text_messages(self, messages, thread_id):
+        """处理多条文本消息"""
+        try:
+            # 合并消息内容
+            if len(messages) == 1:
+                combined_message = messages[0].text
+            else:
+                combined_message = "\n".join([f"{i+1}. {msg.text}" for i, msg in enumerate(messages)])
+            
+            logger.info(f"收到 {len(messages)} 条新消息 [对话ID: {thread_id}]: ***")
+            
+            # 生成AI回复
+            ai_response = self.get_ai_response(combined_message, thread_id)
+            time.sleep(random.uniform(2, 5))
+            
+            try:
+                # 使用direct_answer发送回复
+                self.client.direct_answer(thread_id, ai_response)
+                logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
+                # 标记所有消息为已处理
+                for message in messages:
+                    self.processed_messages.add(message.id)
+                self.message_count += 1
+            except Exception as e:
+                logger.error(f"发送回复失败: {str(e)}")
+                # 尝试使用direct_send作为备选方案
+                try:
+                    self.client.direct_send(ai_response, thread_ids=[thread_id])
+                    logger.info(f"使用备选方案回复成功 [对话ID: {thread_id}]")
+                    # 标记所有消息为已处理
+                    for message in messages:
+                        self.processed_messages.add(message.id)
+                    self.message_count += 1
+                except Exception as e2:
+                    logger.error(f"备选方案也失败了: {str(e2)}")
+                    self.handle_exception(e2)
+        except Exception as e:
+            logger.error(f"处理文本消息时出错: {str(e)}")
+            self.handle_exception(e)
+
+    def handle_media_message(self, message, thread_id):
+        """处理媒体消息"""
+        try:
+            logger.info(f"收到媒体消息 [对话ID: {thread_id}]: {message.item_type}")
+            response = "Unsupported file type 😭"
+            try:
+                self.client.direct_answer(thread_id, response)
+                logger.info(f"已回复不支持的文件类型提示 [对话ID: {thread_id}]")
+                self.processed_messages.add(message.id)
+                self.message_count += 1
+            except Exception as e:
+                logger.error(f"回复媒体消息失败: {str(e)}")
+                self.handle_exception(e)
+        except Exception as e:
+            logger.error(f"处理媒体消息时出错: {str(e)}")
             self.handle_exception(e)
 
     def handle_messages(self):
@@ -481,8 +507,8 @@ Do not negate what you have said before:
                     is_processing = True
                     for thread in unread_threads:
                         self.process_thread(thread)
-                        has_new_message = True
-                        last_message_time = time.time()  # 更新最后活动时间
+                    has_new_message = True
+                    last_message_time = time.time()  # 更新最后活动时间
                     is_processing = False
                     consecutive_errors = 0  # 重置错误计数
                 
@@ -493,8 +519,8 @@ Do not negate what you have said before:
                     is_processing = True
                     for thread in pending_threads:
                         self.process_thread(thread)
-                        has_new_message = True
-                        last_message_time = time.time()  # 更新最后活动时间
+                    has_new_message = True
+                    last_message_time = time.time()  # 更新最后活动时间
                     is_processing = False
                     consecutive_errors = 0  # 重置错误计数
                 
