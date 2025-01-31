@@ -565,7 +565,7 @@ class InstagramBot:
             memories = memory_response.strip()
             
             # 如果找到相关记忆且格式正确，添加到对话上下文
-            if memories != "none":
+            if memories != "none" and memories.startswith("["):  # 确保是 JSON 数组
                 try:
                     memory_list = json.loads(memories)
                     logger.info("找到相关历史记忆:")
@@ -915,7 +915,7 @@ class InstagramBot:
         """执行随机动作"""
         actions = [
             (self.browse_feed, 0.3),  # 30%概率浏览帖子
-            (lambda: time.sleep(random.uniform(30, 60)), 0.7),  # 70%概率休息
+            (lambda: time.sleep(random.uniform(30, 60)),  # 70%概率休息
         ]
         
         action, _ = random.choices(
