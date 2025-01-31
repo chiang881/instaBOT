@@ -913,9 +913,10 @@ class InstagramBot:
 
     def random_action(self):
         """执行随机动作"""
+        # 定义可能的操作和它们的概率
         actions = [
             (self.browse_feed, 0.3),  # 30%概率浏览帖子
-            (lambda: time.sleep(random.uniform(30, 60)),  # 70%概率休息
+            (lambda: time.sleep(random.uniform(30, 60)), 0.7)  # 70%概率休息
         ]
         
         action, _ = random.choices(
