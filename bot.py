@@ -1,13 +1,15 @@
-from instagrapi import Client
-import openai
+import os
+from dotenv import load_dotenv
+import json
 import time
 import logging
-import json
 import random
 import re
 import imaplib
 import email
 from datetime import datetime
+from instagrapi import Client
+import openai
 from instagrapi.mixins.challenge import ChallengeChoice
 from instagrapi.exceptions import (
     BadPassword, ReloginAttemptExceeded, ChallengeRequired,
@@ -15,17 +17,23 @@ from instagrapi.exceptions import (
     FeedbackRequired, PleaseWaitFewMinutes, LoginRequired,
     ChallengeError, ChallengeSelfieCaptcha, ChallengeUnknownStep
 )
-import os
 import requests
 import base64
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+# 加载 .env 文件
+load_dotenv()
+
 # 配置日志
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=logging.INFO,  # 改回 INFO 级别
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # 输出到控制台
+        logging.FileHandler('bot.log')  # 同时保存到文件
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -37,6 +45,13 @@ OPENAI_API_BASE = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
 LINGYI_API_KEY = os.getenv('LINGYI_API_KEY', '')
 LINGYI_API_BASE = os.getenv('LINGYI_API_BASE', 'https://api.lingyiwanwu.com/v1/chat/completions')
 CHAT_HISTORY_KEY = os.getenv('CHAT_HISTORY_KEY', '')  # 用于加密聊天记录的密钥
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')  # 用于记忆管理的API密钥
+
+# 添加环境变量检查
+if not GROQ_API_KEY:
+    logger.error("GROQ_API_KEY 未在环境变量中设置")
+else:
+    logger.info("GROQ_API_KEY 已加载")
 
 # 配置OpenAI
 openai.api_key = OPENAI_API_KEY
@@ -102,53 +117,95 @@ def change_password_handler(username):
     return password
 
 def create_chat_completion(messages, use_lingyi=False):
-    """创建聊天完成，如果 DeepSeek 失败则使用灵医万物"""
+    """创建聊天完成，只使用灵医万物"""
     try:
-        if not use_lingyi:
-            try:
-                # 先尝试使用 DeepSeek
-                response = openai.ChatCompletion.create(
-                    model="deepseek-chat",
-                    messages=messages
-                )
-                content = response.choices[0].message['content']
-                if "None [200] GET" in content:  # DeepSeek API 错误
-                    raise Exception("DeepSeek API error")
-                return content, False  # 返回内容和是否需要切换到灵医万物
-            except Exception as e:
-                logger.warning(f"DeepSeek API 调用失败，切换到灵医万物: {str(e)}")
-                use_lingyi = True
-        
-        if use_lingyi:
-            # 使用灵医万物 API
-            headers = {
-                "Authorization": f"Bearer {LINGYI_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "model": "yi-lightning",
-                "messages": messages,
-                "temperature": 0.50,
-                "top_p": 0.9,
-                "max_tokens": 95
-            }
-            # 确保 API URL 完整
-            api_url = LINGYI_API_BASE if LINGYI_API_BASE.startswith('http') else 'https://api.lingyiwanwu.com/v1/chat/completions'
-            response = requests.post(
-                api_url,
-                headers=headers,
-                json=payload
-            )
-            if response.status_code == 200:
-                content = response.json()['choices'][0]['message']['content']
-                if "None [200] GET" in content:  # 检查是否是不支持的文件类型
-                    return "Unsupported file type 😭", True
-                return content, True
-            else:
-                raise Exception(f"灵医万物 API 错误: {response.text}")
+        # 使用灵医万物 API
+        headers = {
+            "Authorization": f"Bearer {LINGYI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "yi-lightning",
+            "messages": messages,
+            "temperature": 0.50,
+            "top_p": 0.9,
+            "max_tokens": 95
+        }
+        # 确保 API URL 完整
+        api_url = LINGYI_API_BASE if LINGYI_API_BASE.startswith('http') else 'https://api.lingyiwanwu.com/v1/chat/completions'
+        response = requests.post(
+            api_url,
+            headers=headers,
+            json=payload
+        )
+        if response.status_code == 200:
+            content = response.json()['choices'][0]['message']['content']
+            if "None [200] GET" in content:  # 检查是否是不支持的文件类型
+                return "Unsupported file type 😭", True
+            return content, True
+        else:
+            raise Exception(f"灵医万物 API 错误: {response.text}")
     except Exception as e:
         logger.error(f"AI 调用失败: {str(e)}")
         return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
+
+def call_memory_ai(messages):
+    """调用 GROQ API 进行记忆管理"""
+    try:
+        # 检查 API KEY
+        if not GROQ_API_KEY:
+            logger.error("GROQ API KEY 未设置，回退到灵医万物")
+            memory_response, _ = create_chat_completion(messages, use_lingyi=True)
+            return memory_response
+            
+        logger.info("使用 GROQ API 调用记忆管理")
+        headers = {
+            'Authorization': f'Bearer {GROQ_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        payload = {
+            'model': 'deepseek-r1-distill-llama-70b',  # 改用 deepseek 模型
+            'messages': messages,
+            'temperature': 0.7,
+            'max_tokens': 2000
+        }
+        
+        response = requests.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=30  # 添加超时设置
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"GROQ API 错误: {response.text}")
+            logger.info("回退到灵医万物")
+            memory_response, _ = create_chat_completion(messages, use_lingyi=True)
+            return memory_response
+            
+        result = response.json()['choices'][0]['message']['content']
+        
+        # 处理返回结果，移除 <think> 部分
+        result = re.sub(r'<think>.*?</think>\s*', '', result, flags=re.DOTALL)
+        result = result.strip()
+        
+        # 如果结果包含 JSON 部分，提取它
+        json_match = re.search(r'```json\n([\s\S]*?)\n```', result)
+        if json_match:
+            result = json_match.group(1).strip()
+            
+        return result
+        
+    except Exception as e:
+        logger.error(f"调用记忆 AI 失败: {str(e)}")
+        logger.info("发生错误，回退到灵医万物")
+        try:
+            memory_response, _ = create_chat_completion(messages, use_lingyi=True)
+            return memory_response
+        except Exception as e2:
+            logger.error(f"灵医万物调用也失败了: {str(e2)}")
+            return "none"
 
 class ChatHistoryManager:
     def __init__(self, encryption_key):
@@ -166,7 +223,7 @@ class ChatHistoryManager:
         # 创建存储目录
         os.makedirs('chat_history', exist_ok=True)
     
-    def add_message(self, thread_id, role, content):
+    def add_message(self, thread_id, role, content, metadata=None):
         """添加新消息到对话历史"""
         if thread_id not in self.conversations:
             self.conversations[thread_id] = []
@@ -174,19 +231,25 @@ class ChatHistoryManager:
         # 确保thread_id是字符串
         thread_id = str(thread_id)
         
+        # 确保格式与示例文件一致
         message = {
-            'timestamp': datetime.now().isoformat(),  # 使用ISO格式的字符串
+            'timestamp': datetime.now().isoformat(),  # 使用 ISO 格式时间戳
             'role': role,
             'content': content
         }
+        # 只有在有 metadata 时才添加
+        if metadata:
+            message['metadata'] = metadata
+            
         self.conversations[thread_id].append(message)
+        logger.info(f"添加新消息 [对话ID: {thread_id}] - {role}: {content[:100]}...")
         
         # 保存到文件
         self.save_conversation(thread_id)
     
     def save_conversation(self, thread_id):
         """保存单个对话到加密文件"""
-        thread_id = str(thread_id)  # 确保thread_id是字符串
+        thread_id = str(thread_id)
         if thread_id not in self.conversations:
             return
             
@@ -194,14 +257,28 @@ class ChatHistoryManager:
         if not conversation:
             return
             
-        # 加密对话内容
-        data = json.dumps(conversation, ensure_ascii=False)  # 支持中文字符
-        encrypted_data = self.cipher_suite.encrypt(data.encode('utf-8'))
-        
-        # 保存到文件
-        filename = f'chat_history/conversation_{thread_id}.enc'
-        with open(filename, 'wb') as f:
-            f.write(encrypted_data)
+        try:
+            # 保存未加密版本用于本地加载
+            local_dir = "downloaded_artifacts 22-29-31-785/artifact_2510800793"
+            os.makedirs(local_dir, exist_ok=True)
+            local_file = os.path.join(local_dir, f"conversation_{thread_id}.json")
+            with open(local_file, 'w', encoding='utf-8') as f:
+                json.dump(conversation, f, ensure_ascii=False, indent=2)
+            logger.info(f"保存本地对话文件: {local_file}")
+            
+            # 保存加密版本用于上传到 GitHub
+            data = json.dumps(conversation, ensure_ascii=False)
+            encrypted_data = self.cipher_suite.encrypt(data.encode('utf-8'))
+            
+            # 保存到加密文件
+            os.makedirs('chat_history', exist_ok=True)
+            encrypted_file = f'chat_history/conversation_{thread_id}.enc'
+            with open(encrypted_file, 'wb') as f:
+                f.write(encrypted_data)
+            logger.info(f"保存加密对话文件: {encrypted_file}")
+            
+        except Exception as e:
+            logger.error(f"保存对话失败 [对话ID: {thread_id}]: {str(e)}")
     
     def save_all_conversations(self):
         """保存所有对话"""
@@ -233,11 +310,11 @@ class InstagramBot:
         self.processed_messages = set()  # 用于跟踪已处理的消息
         self.relogin_attempt = 0
         self.max_relogin_attempts = 3
-        self.use_lingyi = False  # 标记是否使用灵医万物 API
+        self.use_lingyi = False
         
         # 对话上下文管理
-        self.conversation_contexts = {}  # 用于存储每个对话的上下文 {thread_id: [messages]}
-        self.max_context_length = 20  # 最大上下文长度
+        self.conversation_contexts = {}
+        self.max_context_length = 20
         
         # 聊天历史管理
         self.chat_history = ChatHistoryManager(CHAT_HISTORY_KEY)
@@ -246,14 +323,9 @@ class InstagramBot:
         self.client.challenge_code_handler = challenge_code_handler
         self.client.change_password_handler = change_password_handler
         
-        # 设置随机延迟范围（1-3秒）
         self.client.delay_range = [1, 3]
-        
-        # 设置每日限制
         self.daily_message_limit = 100
         self.message_count = 0
-        
-        # 设置设备信息
         self.setup_device()
         
     def setup_device(self):
@@ -411,62 +483,131 @@ class InstagramBot:
             return ""
 
     def get_ai_response(self, message, thread_id):
-        """生成AI回复，考虑对话上下文"""
+        """获取AI回复"""
         try:
-            logger.info(f"正在生成AI回复，用户消息: ***")
+            thread_id = str(thread_id)
             
-            # 获取或初始化对话上下文
-            if thread_id not in self.conversation_contexts:
-                self.conversation_contexts[thread_id] = []
+            # 加载历史对话
+            try:
+                conversation = self.chat_history.load_conversation(thread_id)
+                logger.info(f"加载历史对话 [对话ID: {thread_id}] - {len(conversation)} 条消息")
+                logger.info("历史对话内容:")
+                for msg in conversation:
+                    logger.info(f"  {msg.get('timestamp')} - {msg.get('role')}: {msg.get('content')}")
+            except Exception as e:
+                logger.error(f"加载历史对话时出错: {str(e)}")
+                conversation = []
             
-            context = self.conversation_contexts[thread_id]
-            
-            # 构建消息列表
-            messages = [
-                {"role": "system", "content": """Things to do:
-1. Language style:
-- Use slang or colloquialisms, keep it short and concise (word count for answers ≈ word count for questions, omit periods, make commas, blur the language)
-- Talk naturally like a human being, avoid linear logic
-- Use the same language as the other person
+            # 构建记忆提取提示词
+            memory_messages = [
+                {
+                    "role": "system",
+                    "content": """你是一个专业的记忆管理 AI 助手。你的任务是从记忆库中提取相关对话片段，并严格按照以下格式返回。注意：你必须直接返回 JSON 格式的结果，不要包含任何其他内容。
 
-2. attitude:
-- Stay positive
-- Don't dismiss the other person's ideas or requests.
-- Do not negate the other person's point of view or request.
-- When challenged, come back and do not negate what was said before.
+1. 如果找到相关记忆，返回格式如下：
+[
+    {"role": "user", "content": "今天天气真不错！"},
+    {"role": "assistant", "content": "是的"},
+    {"role": "user", "content": "我最近超爱打篮球的"},
+    {"role": "assistant", "content": "好的"},
+    {"role": "user", "content": "我1月说过什么？"}
+]
 
-Do not negate what you have said before:
-- Subjective Opinions: Do not bring up subjective opinions.
-- Factual information: Don't mention what you did today, homework, or future plans.
-- Hidden identity: first-year students (avoid mentioning them)"""}
+2. 如果没有找到相关记忆，只返回：
+"none"
+
+规则：
+1. 必须只提取与查询主题相关的对话（例如：查询饮食时，只返回与食物相关的对话）
+2. 必须包含完整的对话对（每个 user 消息都要有一个 assistant 回复）
+3. assistant 的回复必须简化为简短的肯定词（如："好的"、"明白了"、"是的"）
+4. 必须按时间顺序排列
+5. 必须在最后添加当前的问题
+6. 对于时间相关的查询，注意返回指定时间段的对话
+7. 不要输出任何其他内容，只返回 JSON 格式的结果"""
+                },
+                {
+                    "role": "user",
+                    "content": f"历史对话：{json.dumps(conversation, ensure_ascii=False)}\n\n当前问题：{message}"
+                }
             ]
             
-            # 添加历史对话作为上下文
-            for ctx_message in context:
-                role = "user" if "(用户)" in ctx_message else "assistant"
-                content = ctx_message.replace("(用户) ", "").replace("(我AI) ", "").replace("(历史总结) ", "")
-                messages.append({"role": role, "content": content})
+            # 调用记忆AI获取相关记忆
+            logger.info(f"开始调用记忆AI [对话ID: {thread_id}]")
+            logger.info(f"当前问题: {message}")
+            memory_response = call_memory_ai(memory_messages)
+            logger.info(f"记忆AI返回结果: {memory_response}")
             
-            # 添加新消息
-            messages.append({"role": "user", "content": message})
+            memories = memory_response.strip()
             
-            time.sleep(random.uniform(1, 3))
-            response_text, switch_to_lingyi = create_chat_completion(messages, self.use_lingyi)
-            if switch_to_lingyi:
-                self.use_lingyi = True  # 更新标志，之后都使用灵医万物
-            
-            if response_text == "Unsupported file type 😭":
-                logger.warning("检测到不支持的文件类型")
+            # 如果找到相关记忆且格式正确，添加到对话上下文
+            if memories != "none":
+                try:
+                    memory_list = json.loads(memories)
+                    logger.info("找到相关历史记忆:")
+                    for msg in memory_list:
+                        logger.info(f"  {msg.get('role')}: {msg.get('content')}")
+                    messages = memory_list + [{"role": "user", "content": message}]
+                except json.JSONDecodeError:
+                    logger.warning(f"记忆格式无效，忽略历史记忆")
+                    messages = [{"role": "user", "content": message}]
             else:
-                logger.info(f"AI回复生成成功: ***")
+                logger.info("没有找到相关历史记忆")
+                messages = [{"role": "user", "content": message}]
             
-            # 将AI回复添加到上下文（带上身份标记）
-            context.append(f"(我AI) {response_text}")
-            
-            return response_text
+            # 生成回复
+            try:
+                time.sleep(random.uniform(1, 3))
+                logger.info(f"开始调用对话AI生成回复")
+                response_text, switch_to_lingyi = create_chat_completion(messages, self.use_lingyi)
+                if switch_to_lingyi:
+                    self.use_lingyi = True
+                logger.info(f"对话AI回复: {response_text}")
+                
+                # 保存对话记录
+                try:
+                    self.chat_history.add_message(thread_id, "user", message)
+                    self.chat_history.add_message(thread_id, "assistant", response_text)
+                    logger.info(f"已保存对话记录")
+                except Exception as e:
+                    logger.error(f"保存对话记录时出错: {str(e)}")
+                
+                return response_text
+            except Exception as e:
+                logger.error(f"生成回复时出错: {str(e)}")
+                return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭"
+                
         except Exception as e:
             logger.error(f"AI回复生成失败: {str(e)}")
             return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭"
+
+    def load_conversation_history(self, thread_id):
+        """根据对话ID加载特定的历史对话"""
+        try:
+            thread_id = str(thread_id)
+            local_dir = "downloaded_artifacts 22-29-31-785/artifact_2510800793"
+            filename = f"conversation_{thread_id}.json"
+            filepath = os.path.join(local_dir, filename)
+            
+            if os.path.exists(filepath):
+                logger.info(f"找到对话历史文件 [对话ID: {thread_id}]")
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    conversation = json.load(f)
+                
+                # 将对话加载到chat_history中
+                self.chat_history.conversations[thread_id] = conversation
+                logger.info(f"成功加载对话历史 [对话ID: {thread_id}]")
+                logger.info(f"- 消息数量: {len(conversation)}")
+                logger.info("- 最近的消息:")
+                # 显示最近的3条消息
+                for i, msg in enumerate(conversation[-3:]):
+                    logger.info(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
+                return True
+            else:
+                logger.info(f"未找到对话历史文件 [对话ID: {thread_id}]")
+                return False
+        except Exception as e:
+            logger.error(f"加载对话历史失败 [对话ID: {thread_id}]: {str(e)}")
+            return False
 
     def process_thread(self, thread):
         """处理单个对话线程"""
@@ -475,64 +616,62 @@ Do not negate what you have said before:
                 logger.warning("已达到每日消息限制")
                 return
                 
-            # 获取完整的对话内容（最近5条消息）
-            try:
-                full_thread = self.client.direct_thread(str(thread.id), amount=5)  # 确保thread.id是字符串
-                if not full_thread.messages:
-                    return
+            thread_id = str(thread.id)
+            
+            # 在处理消息前加载该对话的历史记录
+            self.load_conversation_history(thread_id)
+            
+            # 获取完整的对话内容（最近1条消息）
+            full_thread = self.client.direct_thread(thread_id, amount=1)
+            if not full_thread.messages:
+                return
                 
-                # 获取未处理的连续消息
-                unprocessed_messages = []
-                for message in full_thread.messages[::-1]:  # 从旧到新处理
-                    if message.id in self.processed_messages:
-                        break
-                    if message.item_type == 'text' and message.text:
-                        unprocessed_messages.append(message)
-                    elif message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
-                        # 如果遇到媒体消息，单独处理并中断合并
-                        if unprocessed_messages:
-                            self.handle_text_messages(unprocessed_messages, str(thread.id))
-                            unprocessed_messages = []
-                        self.handle_media_message(message, str(thread.id))
-                
-                # 处理剩余的文本消息
-                if unprocessed_messages:
-                    self.handle_text_messages(unprocessed_messages, str(thread.id))
-                
-            except Exception as e:
-                logger.error(f"处理消息时出错: {str(e)}")
-                self.handle_exception(e)
-                
+            # 获取最新消息
+            message = full_thread.messages[0]
+            
+            # 检查消息是否已经回复过
+            if message.id in self.processed_messages:
+                return
+            
+            # 处理消息
+            if message.item_type == 'text' and message.text:
+                self.handle_text_messages([message], thread_id)
+            elif message.item_type in ['media', 'clip', 'voice_media', 'animated_media', 'reel_share']:
+                self.handle_media_message(message, thread_id)
+                    
         except Exception as e:
-            logger.error(f"处理对话线程时出错: {str(e)}")
+            logger.error(f"处理消息时出错: {str(e)}")
             self.handle_exception(e)
 
     def handle_text_messages(self, messages, thread_id):
         """处理多条文本消息"""
         try:
-            thread_id = str(thread_id)  # 确保thread_id是字符串
-            # 合并消息内容
-            if len(messages) == 1:
-                combined_message = messages[0].text
-            else:
+            thread_id = str(thread_id)
+            # 只有多条消息时才使用编号格式
+            if len(messages) > 1:
                 combined_message = "\n".join([f"{i+1}. {msg.text}" for i, msg in enumerate(messages)])
-            
-            logger.info(f"收到 {len(messages)} 条新消息 [对话ID: {thread_id}]: ***")
-            
-            # 记录用户消息
-            for message in messages:
-                self.chat_history.add_message(thread_id, 'user', message.text)
+                logger.info(f"合并处理 {len(messages)} 条消息 [对话ID: {thread_id}]")
+            else:
+                combined_message = messages[0].text
+                logger.info(f"处理单条消息 [对话ID: {thread_id}]")
             
             # 生成AI回复
+            logger.debug(f"开始生成AI回复 [对话ID: {thread_id}]")
             ai_response = self.get_ai_response(combined_message, thread_id)
+            logger.debug(f"AI回复内容: {ai_response}")
             time.sleep(random.uniform(2, 5))
-            
+                
+            # 使用direct_answer发送回复
             try:
-                # 使用direct_answer发送回复
                 self.client.direct_answer(thread_id, ai_response)
                 logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
-                # 记录AI回复
+                
+                # 记录用户消息和AI回复，包含消息ID
+                for message in messages:
+                    self.chat_history.add_message(thread_id, 'user', message.text, 
+                                                metadata={'message_id': message.id})
                 self.chat_history.add_message(thread_id, 'assistant', ai_response)
+                
                 # 标记所有消息为已处理
                 for message in messages:
                     self.processed_messages.add(message.id)
@@ -543,8 +682,13 @@ Do not negate what you have said before:
                 try:
                     self.client.direct_send(ai_response, thread_ids=[thread_id])
                     logger.info(f"使用备选方案回复成功 [对话ID: {thread_id}]")
-                    # 记录AI回复
+                    
+                    # 记录用户消息和AI回复，包含消息ID
+                    for message in messages:
+                        self.chat_history.add_message(thread_id, 'user', message.text, 
+                                                    metadata={'message_id': message.id})
                     self.chat_history.add_message(thread_id, 'assistant', ai_response)
+                    
                     # 标记所有消息为已处理
                     for message in messages:
                         self.processed_messages.add(message.id)
@@ -555,7 +699,7 @@ Do not negate what you have said before:
         except Exception as e:
             logger.error(f"处理文本消息时出错: {str(e)}")
             self.handle_exception(e)
-
+                
     def handle_media_message(self, message, thread_id):
         """处理媒体消息"""
         try:
@@ -580,7 +724,10 @@ Do not negate what you have said before:
             self.handle_exception(e)
 
     def handle_messages(self):
-        """处理消息，动态调整检查间隔"""
+        """处理消息，动态调整检查间隔
+        Returns:
+            bool: 如果需要继续运行返回True，如果需要退出返回False
+        """
         logger.info("开始监听消息...")
         
         last_message_time = time.time()  # 上次收到消息的时间
@@ -591,6 +738,15 @@ Do not negate what you have said before:
         while True:
             current_time = time.time()
             time_since_last_message = current_time - last_message_time  # 距离上次消息的时间
+            
+            # 检查是否需要退出（2分钟无消息或连续错误过多）
+            if not first_check and time_since_last_message > 120:
+                logger.info("超过2分钟没有新消息，退出监听")
+                return False
+            
+            if consecutive_errors >= 3:
+                logger.info("连续错误过多，退出监听")
+                return False
             
             if not is_processing:
                 logger.info(f"正在检查新消息... 当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -626,33 +782,17 @@ Do not negate what you have said before:
                     if first_check:  # 首次检查无消息
                         logger.info("首次检查无消息，等待30秒后重试")
                         time.sleep(30)
-                        # 再次检查
-                        unread_threads = self.client.direct_threads(amount=20, selected_filter="unread")
-                        pending_threads = self.client.direct_pending_inbox(20)
-                        if not unread_threads and not pending_threads:
-                            logger.info("第二次检查仍无消息，退出监听")
-                            return
-                else:
-                    if first_check:  # 首次检查有消息，进入聊天模式
-                        logger.info("首次检查有新消息，进入聊天模式")
-                    first_check = False
-                
-                # 如果不是首次检查且没有正在处理的消息，根据无消息时长决定检查间隔或退出
-                if not first_check and not is_processing:
-                    # 检查是否需要退出（5分钟无消息或连续错误过多）
-                    if time_since_last_message > 300 or consecutive_errors >= 3:  # 5分钟或3次连续错误
-                        logger.info("超过5分钟没有新消息或连续错误过多，退出监听")
-                        return
-                    
-                    # 根据无消息时长设置检查间隔
-                    if time_since_last_message <= 60:  # 1分钟内
-                        check_interval = random.uniform(3, 6)
-                        logger.info(f"1分钟内，设置检查间隔: {check_interval:.1f}秒")
-                    else:  # 1-5分钟
-                        check_interval = random.uniform(25, 35)  # 约30秒
-                        logger.info(f"超过1分钟无消息，设置检查间隔: {check_interval:.1f}秒")
-                    
-                    time.sleep(check_interval)
+                        first_check = False  # 标记首次检查已完成
+                    else:
+                        # 根据无消息时长设置检查间隔
+                        if time_since_last_message <= 60:  # 1分钟内
+                            check_interval = random.uniform(3, 6)
+                            logger.info(f"1分钟内，设置检查间隔: {check_interval:.1f}秒")
+                        else:  # 1-2分钟
+                            check_interval = random.uniform(15, 20)
+                            logger.info(f"超过1分钟无消息，设置检查间隔: {check_interval:.1f}秒")
+                        
+                        time.sleep(check_interval)
                 
             except Exception as e:
                 logger.error(f"消息处理出错: {str(e)}")
@@ -660,6 +800,11 @@ Do not negate what you have said before:
                 is_processing = False  # 确保处理状态被重置
                 consecutive_errors += 1  # 增加错误计数
                 time.sleep(5)  # 出错后等待一段时间再继续
+            
+            if has_new_message:
+                first_check = False  # 收到消息后标记首次检查完成
+        
+        return True
 
     def browse_feed(self, duration=None):
         """浏览公共随机帖子
@@ -766,11 +911,15 @@ Do not negate what you have said before:
                 # 登录后，70%概率直接回复消息，30%概率先浏览再回复
                 if random.random() < 0.7:
                     logger.info("直接处理消息")
-                    self.handle_messages()
+                    if not self.handle_messages():  # 检查handle_messages的返回值
+                        logger.info("消息处理完成，退出程序")
+                        break  # 如果handle_messages返回False，退出循环
                 else:
                     logger.info("先浏览帖子再处理消息")
                     self.browse_feed()  # 约1分钟
-                    self.handle_messages()
+                    if not self.handle_messages():  # 检查handle_messages的返回值
+                        logger.info("消息处理完成，退出程序")
+                        break  # 如果handle_messages返回False，退出循环
                 
                 message_count += 1
                 
@@ -791,10 +940,108 @@ Do not negate what you have said before:
             # 确保在错误发生时也保存对话历史
             self.chat_history.save_all_conversations()
 
+    def download_chat_history(self):
+        """下载并解密历史对话"""
+        try:
+            from download_artifacts import ArtifactsDownloader
+            
+            # 从环境变量获取token和key
+            github_token = os.getenv('GITHUB_TOKEN', '')
+            encryption_key = os.getenv('CHAT_HISTORY_KEY', '')
+            
+            if not github_token or not encryption_key:
+                logger.warning("未找到GitHub token或加密密钥，尝试加载本地历史对话")
+                self.load_local_history()
+                return
+                
+            logger.info("尝试从 GitHub Artifacts 下载历史对话...")
+            downloader = ArtifactsDownloader(github_token, encryption_key)
+            
+            # 获取最近的运行记录
+            runs = downloader.get_workflow_runs()
+            if not runs:
+                logger.warning("没有找到工作流运行记录，尝试加载本地历史对话")
+                self.load_local_history()
+                return
+            
+            # 获取最近一次运行的artifacts
+            latest_run = runs[0]
+            artifacts = downloader.get_artifacts(latest_run["id"])
+            
+            if not artifacts:
+                logger.warning("没有找到artifacts，尝试加载本地历史对话")
+                self.load_local_history()
+                return
+            
+            # 下载、解压并解密artifacts
+            for artifact in artifacts:
+                if "chat-history" in artifact["name"]:
+                    artifact_dir = downloader.download_and_extract(artifact["id"], "downloaded_chat_history")
+                    if artifact_dir:
+                        logger.info(f"成功从 GitHub Artifacts 下载历史对话到: {artifact_dir}")
+                        return  # 下载成功后直接返回
+                        
+            logger.warning("未找到聊天历史相关的 artifacts，尝试加载本地历史对话")
+            self.load_local_history()
+            
+        except Exception as e:
+            logger.error(f"下载历史对话失败: {str(e)}，尝试加载本地历史对话")
+            self.load_local_history()
+
+    def load_local_history(self):
+        """加载本地历史对话文件"""
+        try:
+            # 修改为相对路径
+            local_dir = "downloaded_artifacts 22-29-31-785/artifact_2510800793"
+            logger.info(f"开始从本地加载历史对话，目录: {local_dir}")
+            
+            if os.path.exists(local_dir):
+                logger.info(f"找到本地历史对话目录: {local_dir}")
+                loaded_files = 0
+                for filename in os.listdir(local_dir):
+                    if filename.startswith("conversation_") and filename.endswith(".json"):
+                        try:
+                            filepath = os.path.join(local_dir, filename)
+                            logger.info(f"正在加载本地对话文件: {filename}")
+                            
+                            with open(filepath, 'r', encoding='utf-8') as f:
+                                conversation = json.load(f)
+                            
+                            # 从文件名中提取thread_id
+                            thread_id = filename.replace('conversation_', '').replace('.json', '')
+                            
+                            # 将对话加载到chat_history中
+                            self.chat_history.conversations[thread_id] = conversation
+                            loaded_files += 1
+                            
+                            logger.info(f"成功从本地加载对话历史 [对话ID: {thread_id}]")
+                            logger.info(f"- 消息数量: {len(conversation)}")
+                            logger.info("- 最近的消息:")
+                            # 显示最近的3条消息
+                            for i, msg in enumerate(conversation[-3:]):
+                                logger.info(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
+                            
+                        except Exception as e:
+                            logger.error(f"加载本地对话文件失败 {filename}: {str(e)}")
+                
+                if loaded_files > 0:
+                    logger.info(f"共成功从本地加载 {loaded_files} 个对话文件")
+                else:
+                    logger.warning("本地目录中没有找到有效的对话文件")
+            else:
+                logger.warning(f"本地历史对话目录不存在: {local_dir}")
+        except Exception as e:
+            logger.error(f"加载本地历史对话文件失败: {str(e)}")
+
+    def load_downloaded_history(self):
+        """加载已下载的历史对话"""
+        # 此方法不再需要，因为本地加载在 download_chat_history 中处理
+        pass
+
 if __name__ == "__main__":
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
     
     try:
         bot.run()
     except Exception as e:
-        logger.error(f"机器人崩溃: {str(e)}") 
+        logger.error(f"机器人崩溃: {str(e)}")

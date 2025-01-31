@@ -1,3 +1,11 @@
+# 环境变量
+.env
+
+# 聊天历史
+chat_history/
+chat_histories/
+downloaded_artifacts*/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -22,7 +30,6 @@ wheels/
 *.egg
 
 # Virtual Environment
-.env
 .venv
 venv/
 ENV/
@@ -35,4 +42,9 @@ ENV/
 
 # Project specific
 session.json
-*.log 
+*.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride 
