@@ -4,4 +4,5 @@ python-dotenv==1.0.0
 requests==2.31.0
 urllib3==2.1.0
 Pillow>=8.1.1
-cryptography==42.0.2 
+cryptography==42.0.2
+firebase-admin==6.3.0 

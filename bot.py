@@ -22,6 +22,9 @@ import base64
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
 
 # 加载 .env 文件
 load_dotenv()
@@ -208,47 +211,42 @@ def call_memory_ai(messages):
             return "none"
 
 class ChatHistoryManager:
-    def __init__(self, encryption_key):
-        self.conversations = {}  # {thread_id: [messages]}
-        # 生成加密密钥
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=b'instagram_bot_salt',  # 固定salt
-            iterations=100000,
-        )
-        key = base64.urlsafe_b64encode(kdf.derive(encryption_key.encode()))
-        self.cipher_suite = Fernet(key)
-        
-        # 创建存储目录
-        os.makedirs('chat_history', exist_ok=True)
-    
-    def add_message(self, thread_id, role, content, metadata=None):
-        """添加新消息到对话历史"""
-        if thread_id not in self.conversations:
-            self.conversations[thread_id] = []
+    def __init__(self):
+        """初始化 Firebase 连接"""
+        try:
+            # 从环境变量获取 Firebase 配置
+            firebase_cred_base64 = os.getenv('FIREBASE_CREDENTIALS_BASE64')
+            firebase_url = os.getenv('FIREBASE_DATABASE_URL')
             
-        # 确保thread_id是字符串
-        thread_id = str(thread_id)
-        
-        # 确保格式与示例文件一致
-        message = {
-            'timestamp': datetime.now().isoformat(),  # 使用 ISO 格式时间戳
-            'role': role,
-            'content': content
-        }
-        # 只有在有 metadata 时才添加
-        if metadata:
-            message['metadata'] = metadata
+            if not firebase_cred_base64 or not firebase_url:
+                logger.error("Firebase 配置未找到")
+                return
+                
+            # 解码 base64 凭证
+            try:
+                cred_json = base64.b64decode(firebase_cred_base64).decode('utf-8')
+                cred_dict = json.loads(cred_json)
+                logger.info("Firebase 凭证解码成功")
+            except Exception as e:
+                logger.error(f"Firebase 凭证解码失败: {str(e)}")
+                return
+                
+            # 初始化 Firebase
+            logger.info("初始化 Firebase 连接...")
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred, {
+                'databaseURL': firebase_url
+            })
+            logger.info("Firebase 连接成功")
             
-        self.conversations[thread_id].append(message)
-        logger.info(f"添加新消息 [对话ID: {thread_id}] - {role}: {content[:100]}...")
-        
-        # 保存到文件
-        self.save_conversation(thread_id)
-    
+            self.conversations = {}
+            self.ref = db.reference('chat_histories')
+            
+        except Exception as e:
+            logger.error(f"初始化 Firebase 失败: {str(e)}")
+
     def save_conversation(self, thread_id):
-        """保存单个对话到加密文件"""
+        """保存对话到 Firebase"""
         thread_id = str(thread_id)
         if thread_id not in self.conversations:
             return
@@ -258,68 +256,75 @@ class ChatHistoryManager:
             return
             
         try:
-            # 保存未加密版本用于本地加载
+            logger.info(f"保存对话到 Firebase [对话ID: {thread_id}]")
+            # 更新 Firebase
+            self.ref.child(thread_id).set(conversation)
+            logger.info("保存成功")
+            
+            # 同时保存本地备份
             local_dir = "downloaded_artifacts 22-29-31-785/artifact_2510800793"
             os.makedirs(local_dir, exist_ok=True)
             local_file = os.path.join(local_dir, f"conversation_{thread_id}.json")
             with open(local_file, 'w', encoding='utf-8') as f:
                 json.dump(conversation, f, ensure_ascii=False, indent=2)
-            logger.info(f"保存本地对话文件: {local_file}")
-            
-            # 保存加密版本用于上传到 GitHub
-            data = json.dumps(conversation, ensure_ascii=False)
-            encrypted_data = self.cipher_suite.encrypt(data.encode('utf-8'))
-            
-            # 保存到加密文件
-            os.makedirs('chat_history', exist_ok=True)
-            encrypted_file = f'chat_history/conversation_{thread_id}.enc'
-            with open(encrypted_file, 'wb') as f:
-                f.write(encrypted_data)
-            logger.info(f"保存加密对话文件: {encrypted_file}")
+            logger.info(f"保存本地备份: {local_file}")
             
         except Exception as e:
             logger.error(f"保存对话失败 [对话ID: {thread_id}]: {str(e)}")
-    
-    def save_all_conversations(self):
-        """保存所有对话"""
-        for thread_id in self.conversations:
-            self.save_conversation(thread_id)
-    
+
     def load_conversation(self, thread_id):
-        """从文件加载对话"""
+        """从 Firebase 加载对话"""
         thread_id = str(thread_id)
-        filename = f'chat_history/conversation_{thread_id}.enc'
+        logger.info(f"尝试从 Firebase 加载对话 [对话ID: {thread_id}]")
         
-        logger.info(f"尝试加载对话历史 [对话ID: {thread_id}]")
-        logger.info(f"查找加密文件: {filename}")
-        
-        if not os.path.exists(filename):
-            logger.info(f"未找到加密对话文件，尝试从本地加载: conversation_{thread_id}.json")
-            # 尝试从本地文件加载
+        try:
+            # 从 Firebase 加载
+            conversation = self.ref.child(thread_id).get()
+            if conversation:
+                logger.info(f"成功从 Firebase 加载对话 - {len(conversation)} 条消息")
+                self.conversations[thread_id] = conversation
+                return conversation
+                
+            # 如果 Firebase 没有数据，尝试从本地加载
+            logger.info("Firebase 中未找到数据，尝试从本地加载")
             local_file = f"downloaded_artifacts 22-29-31-785/artifact_2510800793/conversation_{thread_id}.json"
             if os.path.exists(local_file):
-                try:
-                    with open(local_file, 'r', encoding='utf-8') as f:
-                        conversation = json.load(f)
-                    logger.info(f"成功从本地文件加载对话历史 [对话ID: {thread_id}]")
-                    return conversation
-                except Exception as e:
-                    logger.error(f"加载本地对话文件失败: {str(e)}")
-            else:
-                logger.info(f"本地文件也不存在，返回空对话")
+                with open(local_file, 'r', encoding='utf-8') as f:
+                    conversation = json.load(f)
+                logger.info(f"成功从本地加载对话 - {len(conversation)} 条消息")
+                # 同步到 Firebase
+                self.ref.child(thread_id).set(conversation)
+                logger.info("已同步本地数据到 Firebase")
+                self.conversations[thread_id] = conversation
+                return conversation
+                
+            logger.info("未找到对话历史")
             return []
             
-        try:
-            logger.info(f"找到加密文件，尝试解密")
-            with open(filename, 'rb') as f:
-                encrypted_data = f.read()
-            data = self.cipher_suite.decrypt(encrypted_data)
-            conversation = json.loads(data.decode('utf-8'))
-            logger.info(f"成功解密并加载对话历史 [对话ID: {thread_id}]")
-            return conversation
         except Exception as e:
-            logger.error(f"解密对话历史失败: {str(e)}")
+            logger.error(f"加载对话失败: {str(e)}")
             return []
+
+    def add_message(self, thread_id, role, content, metadata=None):
+        """添加新消息到对话历史"""
+        if thread_id not in self.conversations:
+            self.conversations[thread_id] = []
+            
+        thread_id = str(thread_id)
+        
+        message = {
+            'timestamp': datetime.now().isoformat(),
+            'role': role,
+            'content': content
+        }
+        if metadata:
+            message['metadata'] = metadata
+            
+        self.conversations[thread_id].append(message)
+        logger.info(f"添加新消息 [对话ID: {thread_id}] - {role}: {content[:100]}...")
+        
+        # 保存到 Firebase
+        self.save_conversation(thread_id)
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -337,7 +342,7 @@ class InstagramBot:
         self.max_context_length = 20
         
         # 聊天历史管理
-        self.chat_history = ChatHistoryManager(CHAT_HISTORY_KEY)
+        self.chat_history = ChatHistoryManager()
         
         # 设置验证码处理器
         self.client.challenge_code_handler = challenge_code_handler

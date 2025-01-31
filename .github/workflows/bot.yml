@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main  # 主分支代码推送时触发
-  schedule:
-    - cron: '0 */3 * * *'  # 每3小时运行一次
   repository_dispatch:
     types: [trigger-bot]  # 添加 repository_dispatch 触发器
   workflow_dispatch:  # 允许手动触发
@@ -14,20 +12,41 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     
+    env:
+      INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
+      INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+      LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
+      LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
+      FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
     
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.12'
+        python-version: '3.10'
         
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install cryptography  # 添加加密库
         
+    - name: Run bot
+      run: |
+        python bot.py
+      
+    - name: Upload error logs if failed
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: error-logs
+        path: bot.log
+
     - name: Log trigger info
       if: github.event_name == 'repository_dispatch'
       run: |
@@ -43,21 +62,6 @@ jobs:
       run: |
         echo "${{ secrets.INSTAGRAM_SESSION }}" | base64 -d > session.json
       
-    - name: Run bot
-      run: python bot.py
-      env:
-        PYTHONUNBUFFERED: 1  # 实时输出日志
-        INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
-        INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-        LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
-        LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
-        CHAT_HISTORY_KEY: ${{ secrets.CHAT_HISTORY_KEY }}  # 添加聊天历史加密密钥
-        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}  # 添加 GROQ API 密钥
-        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}  # 添加加密密钥
-        HUB_TOKEN: ${{ secrets.HUB_TOKEN }}  # 添加 GitHub Token
-        
     - name: Upload chat history
       if: always()  # 即使任务失败也上传
       uses: actions/upload-artifact@v4

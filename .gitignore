@@ -1,7 +1,13 @@
-# 环境变量
+# 环境变量和敏感信息
 .env
+*.json
+!package.json
+!package-lock.json
+session.json
+*firebase*.json
+*serviceAccount*.json
 
-# 聊天历史
+# 聊天历史和下载文件
 chat_history/
 chat_histories/
 downloaded_artifacts*/
@@ -13,9 +19,30 @@ __pycache__/
 *.so
 .Python
 env/
+venv/
+.venv/
 build/
-develop-eggs/
 dist/
+*.egg-info/
+
+# 日志文件
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# Virtual Environment
+ENV/
+
+# Python
+develop-eggs/
 downloads/
 eggs/
 .eggs/
@@ -25,26 +52,13 @@ parts/
 sdist/
 var/
 wheels/
-*.egg-info/
-.installed.cfg
 *.egg
-
-# Virtual Environment
-.venv
-venv/
-ENV/
+.installed.cfg
 
 # IDE
-.idea/
-.vscode/
 *.swp
 *.swo
 
-# Project specific
-session.json
-*.log
-
 # macOS
-.DS_Store
 .AppleDouble
 .LSOverride 
