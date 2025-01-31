@@ -54,6 +54,9 @@ jobs:
         LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
         LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
         CHAT_HISTORY_KEY: ${{ secrets.CHAT_HISTORY_KEY }}  # 添加聊天历史加密密钥
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}  # 添加 GROQ API 密钥
+        ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}  # 添加加密密钥
+        HUB_TOKEN: ${{ secrets.HUB_TOKEN }}  # 添加 GitHub Token
         
     - name: Upload chat history
       if: always()  # 即使任务失败也上传
