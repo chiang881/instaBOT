@@ -287,18 +287,38 @@ class ChatHistoryManager:
     
     def load_conversation(self, thread_id):
         """从文件加载对话"""
-        thread_id = str(thread_id)  # 确保thread_id是字符串
+        thread_id = str(thread_id)
         filename = f'chat_history/conversation_{thread_id}.enc'
+        
+        logger.info(f"尝试加载对话历史 [对话ID: {thread_id}]")
+        logger.info(f"查找加密文件: {filename}")
+        
         if not os.path.exists(filename):
+            logger.info(f"未找到加密对话文件，尝试从本地加载: conversation_{thread_id}.json")
+            # 尝试从本地文件加载
+            local_file = f"downloaded_artifacts 22-29-31-785/artifact_2510800793/conversation_{thread_id}.json"
+            if os.path.exists(local_file):
+                try:
+                    with open(local_file, 'r', encoding='utf-8') as f:
+                        conversation = json.load(f)
+                    logger.info(f"成功从本地文件加载对话历史 [对话ID: {thread_id}]")
+                    return conversation
+                except Exception as e:
+                    logger.error(f"加载本地对话文件失败: {str(e)}")
+            else:
+                logger.info(f"本地文件也不存在，返回空对话")
             return []
             
         try:
+            logger.info(f"找到加密文件，尝试解密")
             with open(filename, 'rb') as f:
                 encrypted_data = f.read()
             data = self.cipher_suite.decrypt(encrypted_data)
-            return json.loads(data.decode('utf-8'))
+            conversation = json.loads(data.decode('utf-8'))
+            logger.info(f"成功解密并加载对话历史 [对话ID: {thread_id}]")
+            return conversation
         except Exception as e:
-            logger.error(f"加载对话历史失败: {str(e)}")
+            logger.error(f"解密对话历史失败: {str(e)}")
             return []
 
 class InstagramBot:
@@ -955,17 +975,22 @@ class InstagramBot:
                 return
                 
             logger.info("尝试从 GitHub Artifacts 下载历史对话...")
+            logger.info("初始化 ArtifactsDownloader")
             downloader = ArtifactsDownloader(github_token, encryption_key)
             
             # 获取最近的运行记录
+            logger.info("获取最近的工作流运行记录")
             runs = downloader.get_workflow_runs()
             if not runs:
                 logger.warning("没有找到工作流运行记录，尝试加载本地历史对话")
                 self.load_local_history()
                 return
             
-            # 获取最近一次运行的artifacts
             latest_run = runs[0]
+            logger.info(f"找到最近的运行记录 ID: {latest_run['id']}")
+            
+            # 获取最近一次运行的artifacts
+            logger.info(f"获取运行 ID {latest_run['id']} 的 artifacts")
             artifacts = downloader.get_artifacts(latest_run["id"])
             
             if not artifacts:
@@ -973,13 +998,22 @@ class InstagramBot:
                 self.load_local_history()
                 return
             
+            logger.info(f"找到 {len(artifacts)} 个 artifacts")
+            
             # 下载、解压并解密artifacts
             for artifact in artifacts:
+                logger.info(f"检查 artifact: {artifact['name']}")
                 if "chat-history" in artifact["name"]:
+                    logger.info(f"找到聊天历史 artifact，ID: {artifact['id']}")
+                    logger.info("开始下载和解压")
                     artifact_dir = downloader.download_and_extract(artifact["id"], "downloaded_chat_history")
                     if artifact_dir:
                         logger.info(f"成功从 GitHub Artifacts 下载历史对话到: {artifact_dir}")
-                        return  # 下载成功后直接返回
+                        # 加载下载的对话到内存
+                        self.load_downloaded_conversations(artifact_dir)
+                        return
+                    else:
+                        logger.error("下载或解压失败")
                         
             logger.warning("未找到聊天历史相关的 artifacts，尝试加载本地历史对话")
             self.load_local_history()
@@ -1033,10 +1067,34 @@ class InstagramBot:
         except Exception as e:
             logger.error(f"加载本地历史对话文件失败: {str(e)}")
 
-    def load_downloaded_history(self):
-        """加载已下载的历史对话"""
-        # 此方法不再需要，因为本地加载在 download_chat_history 中处理
-        pass
+    def load_downloaded_conversations(self, artifact_dir):
+        """加载下载的对话到内存"""
+        logger.info(f"开始加载下载的对话文件，目录: {artifact_dir}")
+        try:
+            loaded_files = 0
+            for filename in os.listdir(artifact_dir):
+                if filename.endswith('.enc'):
+                    try:
+                        thread_id = filename.replace('conversation_', '').replace('.enc', '')
+                        filepath = os.path.join(artifact_dir, filename)
+                        logger.info(f"加载对话文件: {filename}")
+                        
+                        with open(filepath, 'rb') as f:
+                            encrypted_data = f.read()
+                        data = self.cipher_suite.decrypt(encrypted_data)
+                        conversation = json.loads(data.decode('utf-8'))
+                        
+                        self.chat_history.conversations[thread_id] = conversation
+                        loaded_files += 1
+                        logger.info(f"成功加载对话 [对话ID: {thread_id}] - {len(conversation)} 条消息")
+                        
+                    except Exception as e:
+                        logger.error(f"加载对话文件失败 {filename}: {str(e)}")
+            
+            logger.info(f"共加载了 {loaded_files} 个对话文件")
+            
+        except Exception as e:
+            logger.error(f"加载下载的对话失败: {str(e)}")
 
 if __name__ == "__main__":
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
