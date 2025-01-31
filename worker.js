@@ -224,7 +224,7 @@ async function checkWorkflowStatus() {
       'https://api.github.com/repos/chiang881/instaBOT/actions/runs?per_page=10',
       {
         headers: {
-          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Authorization': `Bearer ${HUB_TOKEN}`,
           'Accept': 'application/vnd.github.v3+json',
           'User-Agent': 'InstaBotTrigger/1.0'
         }
@@ -304,7 +304,7 @@ async function handleRequest(request) {
     const response = await fetch('https://api.github.com/repos/chiang881/instaBOT/dispatches', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Authorization': `Bearer ${HUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3+json',
         'Content-Type': 'application/json',
         'User-Agent': 'InstaBotTrigger/1.0'
