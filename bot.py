@@ -597,9 +597,9 @@ class InstagramBot:
 1. 如果找到相关记忆，返回格式如下：
 [
     {"role": "user", "content": "今天天气真不错！"},
-    {"role": "assistant", "content": "是的"},
+    {"role": "assistant", "content": "的确，你最近喜欢干什么？"},
     {"role": "user", "content": "我最近超爱打篮球的"},
-    {"role": "assistant", "content": "好的"},
+    {"role": "assistant", "content": "啊啊啊原来如此"},
     {"role": "user", "content": "我1月说过什么？"}
 ]
 
@@ -609,7 +609,7 @@ class InstagramBot:
 规则：
 1. 必须只提取与查询主题相关的对话（例如：查询饮食时，只返回与食物相关的对话）
 2. 必须包含完整的对话对（每个 user 消息都要有一个 assistant 回复）
-3. assistant 的回复必须简化为简短的肯定词（如："好的"、"明白了"、"是的"）
+3. assistant 的回复必须简化为关键句（保留主要含义）
 4. 必须按时间顺序排列
 5. 必须在最后添加当前的问题
 6. 对于时间相关的查询，注意返回指定时间段的对话
