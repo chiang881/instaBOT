@@ -25,7 +25,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
-import yaml
 
 # 加载 .env 文件
 load_dotenv()
@@ -354,11 +353,6 @@ class InstagramBot:
         self.message_count = 0
         self.setup_device()
         
-        # 加载代理配置
-        if not self.load_proxy_config():
-            logger.error("加载代理配置失败")
-            return
-        
     def setup_device(self):
         """设置设备信息和地区"""
         device = {
@@ -487,9 +481,6 @@ class InstagramBot:
     def login(self):
         """登录 Instagram"""
         try:
-            # 初始延迟
-            time.sleep(random.uniform(2, 4))
-            
             # 尝试从 Firebase 加载会话
             ref = db.reference('instagram_session')
             session_data = ref.get()
@@ -499,66 +490,46 @@ class InstagramBot:
                 # 将会话数据写入临时文件
                 with open('session.json', 'w') as f:
                     json.dump(session_data, f)
-                
-                time.sleep(random.uniform(1, 2))  # 写入文件后延迟
                     
                 try:
                     # 使用会话文件登录
                     self.client.load_settings('session.json')
-                    time.sleep(random.uniform(2, 4))  # 加载设置后延迟
-                    
-                    # 模拟输入用户名前的延迟
-                    time.sleep(random.uniform(1, 2))
                     self.client.login(self.username, self.password)
-                    time.sleep(random.uniform(3, 5))  # 登录后的冷却时间
-                    
                     logger.info("使用已保存的会话登录成功")
-                    
-                    # 验证登录状态
-                    if not self.client.user_id:
-                        raise Exception("登录状态验证失败")
-                    
-                    time.sleep(random.uniform(2, 3))  # 验证后延迟
                     return True
-                    
                 except Exception as e:
                     logger.error(f"使用已保存会话登录失败: {str(e)}")
-                    time.sleep(random.uniform(4, 6))  # 登录失败后的冷却时间
+                    # 继续尝试使用用户名密码登录
             
             # 使用用户名密码登录
             logger.info("尝试使用用户名密码登录")
-            time.sleep(random.uniform(3, 5))  # 准备登录前的延迟
-            
-            # 模拟输入用户名和密码的时间
-            time.sleep(random.uniform(2, 3))
             self.client.login(self.username, self.password)
-            time.sleep(random.uniform(4, 6))  # 登录后的冷却时间
-            
-            # 验证登录状态
-            if not self.client.user_id:
-                raise Exception("登录状态验证失败")
             
             try:
                 # 保存新会话到 Firebase
-                time.sleep(random.uniform(1, 2))  # 保存前延迟
                 self.client.dump_settings('session.json')
-                
-                time.sleep(random.uniform(1, 2))  # 读取前延迟
                 with open('session.json', 'r') as f:
                     session_data = json.load(f)
-                    
-                time.sleep(random.uniform(1, 2))  # Firebase 操作前延迟
                 ref.set(session_data)
                 logger.info("登录成功并保存新会话到 Firebase")
             except Exception as e:
                 logger.error(f"保存会话到 Firebase 失败: {str(e)}")
+                # 即使保存失败也继续运行
             
-            time.sleep(random.uniform(2, 3))  # 完成登录后的最终延迟
             return True
             
         except Exception as e:
             logger.error(f"登录失败: {str(e)}")
-            time.sleep(random.uniform(5, 8))  # 登录失败后的长冷却时间
+            try:
+                # 即使登录失败也尝试保存会话
+                self.client.dump_settings('session.json')
+                with open('session.json', 'r') as f:
+                    session_data = json.load(f)
+                ref.set(session_data)
+                logger.info("已保存会话到 Firebase")
+            except Exception as save_error:
+                logger.error(f"保存会话失败: {str(save_error)}")
+            
             return False
 
     def summarize_context(self, context):
@@ -859,98 +830,85 @@ class InstagramBot:
             self.handle_exception(e)
 
     def handle_messages(self):
-        """处理消息，动态调整检查间隔"""
+        """处理消息，动态调整检查间隔
+        Returns:
+            bool: 如果需要继续运行返回True，如果需要退出返回False
+        """
         logger.info("开始监听消息...")
-        consecutive_errors = 0
-        first_check = True
-        last_message_time = datetime.now()
+        
+        last_message_time = time.time()  # 上次收到消息的时间
+        first_check = True  # 标记是否是首次检查
+        is_processing = False  # 标记是否正在处理消息
+        consecutive_errors = 0  # 连续错误计数
         
         while True:
-            try:
-                # 每次循环开始前的随机延迟
-                time.sleep(random.uniform(2, 4))
-                
-                # 检查是否需要退出
-                if not first_check and (datetime.now() - last_message_time).total_seconds() > 120:
-                    logger.info("超过2分钟没有新消息，退出监听")
-                    return True
-                    
-                if consecutive_errors >= 3:
-                    logger.info("连续错误过多，退出监听")
-                    return True
-                
-                # 检查新消息
+            current_time = time.time()
+            time_since_last_message = current_time - last_message_time  # 距离上次消息的时间
+            
+            # 检查是否需要退出（2分钟无消息或连续错误过多）
+            if not first_check and time_since_last_message > 120:
+                logger.info("超过2分钟没有新消息，退出监听")
+                return False
+            
+            if consecutive_errors >= 3:
+                logger.info("连续错误过多，退出监听")
+                return False
+            
+            if not is_processing:
                 logger.info(f"正在检查新消息... 当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-                has_new_message = False
+            
+            has_new_message = False
+            try:
+                # 检查未读消息
+                unread_threads = self.client.direct_threads(amount=20, selected_filter="unread")
+                if unread_threads:
+                    logger.info(f"发现 {len(unread_threads)} 个未读对话")
+                    is_processing = True
+                    for thread in unread_threads:
+                        self.process_thread(thread)
+                    has_new_message = True
+                    last_message_time = time.time()  # 更新最后活动时间
+                    is_processing = False
+                    consecutive_errors = 0  # 重置错误计数
                 
-                try:
-                    # 获取未读消息前的延迟
-                    time.sleep(random.uniform(3, 5))
-                    inbox = self.client.direct_threads(selected_filter="unread")
-                    
-                    # 处理每个对话前的延迟
-                    time.sleep(random.uniform(2, 3))
-                    
-                    for thread in inbox:
-                        thread_id = thread.id
-                        messages = thread.messages
+                # 检查待处理消息
+                pending_threads = self.client.direct_pending_inbox(20)
+                if pending_threads:
+                    logger.info(f"发现 {len(pending_threads)} 个待处理对话")
+                    is_processing = True
+                    for thread in pending_threads:
+                        self.process_thread(thread)
+                    has_new_message = True
+                    last_message_time = time.time()  # 更新最后活动时间
+                    is_processing = False
+                    consecutive_errors = 0  # 重置错误计数
+                
+                if not has_new_message and not is_processing:
+                    logger.info("没有新消息")
+                    if first_check:  # 首次检查无消息
+                        logger.info("首次检查无消息，等待30秒后重试")
+                        time.sleep(30)
+                        first_check = False  # 标记首次检查已完成
+                    else:
+                        # 根据无消息时长设置检查间隔
+                        if time_since_last_message <= 60:  # 1分钟内
+                            check_interval = random.uniform(3, 6)
+                            logger.info(f"1分钟内，设置检查间隔: {check_interval:.1f}秒")
+                        else:  # 1-2分钟
+                            check_interval = random.uniform(15, 20)
+                            logger.info(f"超过1分钟无消息，设置检查间隔: {check_interval:.1f}秒")
                         
-                        if messages:
-                            has_new_message = True
-                            last_message_time = datetime.now()
-                            
-                            # 处理每条消息前的延迟
-                            time.sleep(random.uniform(2, 4))
-                            
-                            for message in messages:
-                                if message.item_type == "text":
-                                    # 生成回复前的思考时间
-                                    time.sleep(random.uniform(3, 6))
-                                    response = self.get_ai_response(message.text, thread_id)
-                                    
-                                    # 模拟打字时间
-                                    typing_time = len(response) * 0.1  # 每个字符0.1秒
-                                    time.sleep(min(typing_time, 8))  # 最长8秒
-                                    
-                                    self.client.direct_answer(thread_id, response)
-                                    
-                                    # 发送消息后的冷却时间
-                                    time.sleep(random.uniform(2, 4))
-                            
-                            # 标记为已读前的延迟
-                            time.sleep(random.uniform(2, 3))
-                            self.client.direct_thread_mark_seen(thread_id)
-                            
-                            # 处理完一个对话后的休息时间
-                            time.sleep(random.uniform(3, 5))
-                    
-                    consecutive_errors = 0
-                    
-                except Exception as e:
-                    logger.error(f"消息处理出错: {str(e)}")
-                    if "login_required" in str(e):
-                        logger.warning("需要重新登录")
-                        time.sleep(random.uniform(4, 6))  # 重新登录前的冷却时间
-                        if self.login():
-                            logger.info("重新登录成功")
-                            time.sleep(random.uniform(5, 8))  # 重新登录后的长冷却时间
-                            continue
-                    consecutive_errors += 1
-                    time.sleep(random.uniform(8, 12))  # 错误后的长冷却时间
+                        time.sleep(check_interval)
                 
-                if has_new_message:
-                    first_check = False
-                    time.sleep(random.uniform(3, 5))  # 处理完消息后的休息时间
-                elif first_check:
-                    time.sleep(30)  # 首次检查无消息时等待30秒
-                    first_check = False
-                else:
-                    time.sleep(random.uniform(8, 12))  # 无消息时的较长间隔
-                    
             except Exception as e:
-                logger.error(f"消息处理循环出错: {str(e)}")
-                consecutive_errors += 1
-                time.sleep(random.uniform(10, 15))  # 循环错误后的很长冷却时间
+                logger.error(f"消息处理出错: {str(e)}")
+                self.handle_exception(e)
+                is_processing = False  # 确保处理状态被重置
+                consecutive_errors += 1  # 增加错误计数
+                time.sleep(5)  # 出错后等待一段时间再继续
+            
+            if has_new_message:
+                first_check = False  # 收到消息后标记首次检查完成
         
         return True
 
@@ -1224,104 +1182,6 @@ class InstagramBot:
             
         except Exception as e:
             logger.error(f"加载下载的对话失败: {str(e)}")
-
-    def load_proxy_config(self):
-        """加载代理配置"""
-        try:
-            # 尝试从 Firebase 加载代理配置
-            ref = db.reference('proxy_config')
-            proxy_data = ref.get()
-            
-            if proxy_data:
-                logger.info("从 Firebase 加载代理配置")
-                # 将 base64 解码为 YAML
-                proxy_yaml = base64.b64decode(proxy_data).decode('utf-8')
-                
-                # 写入临时文件
-                with open('proxy.yaml', 'w') as f:
-                    f.write(proxy_yaml)
-                    
-                # 设置代理
-                self.set_proxy_from_yaml()
-                return True
-                
-            # 如果 Firebase 中没有，使用环境变量
-            proxy_base64 = os.getenv('PROXY_CONFIG')
-            if proxy_base64:
-                logger.info("从环境变量加载代理配置")
-                proxy_yaml = base64.b64decode(proxy_base64).decode('utf-8')
-                
-                # 写入临时文件
-                with open('proxy.yaml', 'w') as f:
-                    f.write(proxy_yaml)
-                    
-                # 保存到 Firebase
-                ref.set(proxy_base64)
-                logger.info("代理配置已保存到 Firebase")
-                
-                # 设置代理
-                self.set_proxy_from_yaml()
-                return True
-                
-            logger.error("未找到代理配置")
-            return False
-            
-        except Exception as e:
-            logger.error(f"加载代理配置失败: {str(e)}")
-            return False
-
-    def set_proxy_from_yaml(self):
-        """从 YAML 文件设置代理"""
-        try:
-            with open('proxy.yaml', 'r') as f:
-                config = yaml.safe_load(f)
-                
-            # 查找新加坡 01 代理
-            for proxy in config.get('proxies', []):
-                if proxy.get('name') == '[核心] 新加坡 01':
-                    server = proxy.get('server')
-                    port = proxy.get('port')
-                    
-                    # 设置代理环境变量
-                    os.environ['https_proxy'] = f'http://{server}:{port}'
-                    os.environ['http_proxy'] = f'http://{server}:{port}'
-                    os.environ['all_proxy'] = f'socks5://{server}:{port}'
-                    
-                    logger.info(f"已设置代理: {server}:{port}")
-                    return True
-                    
-            logger.error("未找到新加坡 01 代理")
-            return False
-            
-        except Exception as e:
-            logger.error(f"设置代理失败: {str(e)}")
-            return False
-
-    def update_proxy_config(self, yaml_file):
-        """更新代理配置"""
-        try:
-            # 读取新的 YAML 文件
-            with open(yaml_file, 'r') as f:
-                yaml_content = f.read()
-                
-            # 转换为 base64
-            proxy_base64 = base64.b64encode(yaml_content.encode('utf-8')).decode('utf-8')
-            
-            # 保存到 Firebase
-            ref = db.reference('proxy_config')
-            ref.set(proxy_base64)
-            
-            # 更新本地代理设置
-            with open('proxy.yaml', 'w') as f:
-                f.write(yaml_content)
-                
-            self.set_proxy_from_yaml()
-            logger.info("代理配置已更新")
-            return True
-            
-        except Exception as e:
-            logger.error(f"更新代理配置失败: {str(e)}")
-            return False
 
 if __name__ == "__main__":
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)

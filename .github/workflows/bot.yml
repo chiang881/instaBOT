@@ -22,7 +22,6 @@ jobs:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
       FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
-      PROXY_CONFIG: ${{ secrets.PROXY_CONFIG }}  # 添加代理配置
 
     steps:
     - uses: actions/checkout@v4
