@@ -119,51 +119,46 @@ def change_password_handler(username):
     logger.info(f"为账号 {username} 生成新密码: {password}")
     return password
 
-def create_chat_completion(messages, use_lingyi=False, max_retries=3, retry_delay=2):
-    """创建聊天回复，添加重试机制"""
+def create_chat_completion(messages, use_lingyi=True, max_retries=3, retry_delay=2):
+    """创建聊天回复，只使用灵医万物 API"""
     retries = 0
     while retries < max_retries:
         try:
-            if use_lingyi:
-                # 使用灵医万物 API
-                logger.info(f"尝试调用灵医万物 API [尝试次数: {retries + 1}/{max_retries}]")
-                response = requests.post(
-                    LINGYI_API_BASE,
-                    headers={"Authorization": f"Bearer {LINGYI_API_KEY}"},
-                    json={"messages": messages}
-                )
+            logger.info(f"尝试调用灵医万物 API [尝试次数: {retries + 1}/{max_retries}]")
+            response = requests.post(
+                LINGYI_API_BASE,
+                headers={
+                    "Authorization": f"Bearer {LINGYI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "yi-34b-chat-0205",  # 指定模型
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 1000
+                }
+            )
+            
+            if response.status_code == 200:
+                return response.json()["choices"][0]["message"]["content"], True
                 
-                if response.status_code == 200:
-                    return response.json()["choices"][0]["message"]["content"], True
-                    
-                # 如果是 504 或其他错误，等待后重试
-                logger.warning(f"灵医万物 API 请求失败 [状态码: {response.status_code}]，等待 {retry_delay} 秒后重试")
-                time.sleep(retry_delay)
-                retries += 1
-                continue
-                
-            else:
-                # 使用 OpenAI API
-                logger.info(f"尝试调用 OpenAI API [尝试次数: {retries + 1}/{max_retries}]")
-                response = requests.post(
-                    OPENAI_API_BASE,
-                    headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-                    json={
-                        "model": "gpt-3.5-turbo",
-                        "messages": messages,
-                        "temperature": 0.7
-                    }
-                )
-                
-                if response.status_code == 200:
-                    return response.json()["choices"][0]["message"]["content"], False
-                    
-                # 如果是 OpenAI API 错误，切换到灵医万物
-                logger.warning(f"OpenAI API 请求失败 [状态码: {response.status_code}]，切换到灵医万物")
-                return create_chat_completion(messages, use_lingyi=True)
+            # 记录详细的错误信息
+            logger.error(f"API 错误 [状态码: {response.status_code}]")
+            logger.error(f"错误响应: {response.text}")
+            
+            # 如果是 500 错误，等待后重试
+            if response.status_code == 500:
+                if retries < max_retries - 1:
+                    logger.warning(f"服务器错误，等待 {retry_delay} 秒后重试")
+                    time.sleep(retry_delay)
+                    retries += 1
+                    continue
+            
+            # 其他错误直接返回错误消息
+            return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
                 
         except Exception as e:
-            logger.error(f"AI 调用失败: {str(e)}")
+            logger.error(f"API 调用异常: {str(e)}")
             if retries < max_retries - 1:
                 logger.info(f"等待 {retry_delay} 秒后重试")
                 time.sleep(retry_delay)
@@ -172,7 +167,7 @@ def create_chat_completion(messages, use_lingyi=False, max_retries=3, retry_dela
             break
             
     # 所有重试都失败后返回错误消息
-    return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", False
+    return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
 
 def call_memory_ai(messages):
     """调用 GROQ API 进行记忆管理"""
@@ -362,7 +357,7 @@ class InstagramBot:
         self.processed_messages = set()  # 用于跟踪已处理的消息
         self.relogin_attempt = 0
         self.max_relogin_attempts = 3
-        self.use_lingyi = False
+        self.use_lingyi = True
         
         # 对话上下文管理
         self.conversation_contexts = {}
