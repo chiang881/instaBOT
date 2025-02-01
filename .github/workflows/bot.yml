@@ -59,10 +59,6 @@ jobs:
         echo "Timezone: ${{ toJson(github.event.client_payload.device_info.timezone) }}"
         echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}"
         
-    - name: Create session file
-      run: |
-        echo "${{ secrets.INSTAGRAM_SESSION }}" | base64 -d > session.json
-      
     - name: Upload chat history
       if: always()  # 即使任务失败也上传
       uses: actions/upload-artifact@v4
