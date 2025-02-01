@@ -491,25 +491,45 @@ class InstagramBot:
                 with open('session.json', 'w') as f:
                     json.dump(session_data, f)
                     
-                # 使用会话文件登录
-                self.client.load_settings('session.json')
-                self.client.login(self.username, self.password)
-                logger.info("使用已保存的会话登录成功")
-                return True
+                try:
+                    # 使用会话文件登录
+                    self.client.load_settings('session.json')
+                    self.client.login(self.username, self.password)
+                    logger.info("使用已保存的会话登录成功")
+                    return True
+                except Exception as e:
+                    logger.error(f"使用已保存会话登录失败: {str(e)}")
+                    # 继续尝试使用用户名密码登录
             
-            # 如果没有会话，使用用户名密码登录
-            logger.info("Firebase 中没有会话，尝试使用用户名密码登录")
+            # 使用用户名密码登录
+            logger.info("尝试使用用户名密码登录")
             self.client.login(self.username, self.password)
             
-            # 保存新会话到 Firebase
-            with open('session.json', 'r') as f:
-                session_data = json.load(f)
-            ref.set(session_data)
-            logger.info("登录成功并保存新会话到 Firebase")
+            try:
+                # 保存新会话到 Firebase
+                self.client.dump_settings('session.json')
+                with open('session.json', 'r') as f:
+                    session_data = json.load(f)
+                ref.set(session_data)
+                logger.info("登录成功并保存新会话到 Firebase")
+            except Exception as e:
+                logger.error(f"保存会话到 Firebase 失败: {str(e)}")
+                # 即使保存失败也继续运行
+            
             return True
             
         except Exception as e:
             logger.error(f"登录失败: {str(e)}")
+            try:
+                # 即使登录失败也尝试保存会话
+                self.client.dump_settings('session.json')
+                with open('session.json', 'r') as f:
+                    session_data = json.load(f)
+                ref.set(session_data)
+                logger.info("已保存会话到 Firebase")
+            except Exception as save_error:
+                logger.error(f"保存会话失败: {str(save_error)}")
+            
             return False
 
     def summarize_context(self, context):
