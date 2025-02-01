@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
+import yaml
 
 # 加载 .env 文件
 load_dotenv()
@@ -352,6 +353,11 @@ class InstagramBot:
         self.daily_message_limit = 100
         self.message_count = 0
         self.setup_device()
+        
+        # 加载代理配置
+        if not self.load_proxy_config():
+            logger.error("加载代理配置失败")
+            return
         
     def setup_device(self):
         """设置设备信息和地区"""
@@ -1218,6 +1224,104 @@ class InstagramBot:
             
         except Exception as e:
             logger.error(f"加载下载的对话失败: {str(e)}")
+
+    def load_proxy_config(self):
+        """加载代理配置"""
+        try:
+            # 尝试从 Firebase 加载代理配置
+            ref = db.reference('proxy_config')
+            proxy_data = ref.get()
+            
+            if proxy_data:
+                logger.info("从 Firebase 加载代理配置")
+                # 将 base64 解码为 YAML
+                proxy_yaml = base64.b64decode(proxy_data).decode('utf-8')
+                
+                # 写入临时文件
+                with open('proxy.yaml', 'w') as f:
+                    f.write(proxy_yaml)
+                    
+                # 设置代理
+                self.set_proxy_from_yaml()
+                return True
+                
+            # 如果 Firebase 中没有，使用环境变量
+            proxy_base64 = os.getenv('PROXY_CONFIG')
+            if proxy_base64:
+                logger.info("从环境变量加载代理配置")
+                proxy_yaml = base64.b64decode(proxy_base64).decode('utf-8')
+                
+                # 写入临时文件
+                with open('proxy.yaml', 'w') as f:
+                    f.write(proxy_yaml)
+                    
+                # 保存到 Firebase
+                ref.set(proxy_base64)
+                logger.info("代理配置已保存到 Firebase")
+                
+                # 设置代理
+                self.set_proxy_from_yaml()
+                return True
+                
+            logger.error("未找到代理配置")
+            return False
+            
+        except Exception as e:
+            logger.error(f"加载代理配置失败: {str(e)}")
+            return False
+
+    def set_proxy_from_yaml(self):
+        """从 YAML 文件设置代理"""
+        try:
+            with open('proxy.yaml', 'r') as f:
+                config = yaml.safe_load(f)
+                
+            # 查找新加坡 01 代理
+            for proxy in config.get('proxies', []):
+                if proxy.get('name') == '[核心] 新加坡 01':
+                    server = proxy.get('server')
+                    port = proxy.get('port')
+                    
+                    # 设置代理环境变量
+                    os.environ['https_proxy'] = f'http://{server}:{port}'
+                    os.environ['http_proxy'] = f'http://{server}:{port}'
+                    os.environ['all_proxy'] = f'socks5://{server}:{port}'
+                    
+                    logger.info(f"已设置代理: {server}:{port}")
+                    return True
+                    
+            logger.error("未找到新加坡 01 代理")
+            return False
+            
+        except Exception as e:
+            logger.error(f"设置代理失败: {str(e)}")
+            return False
+
+    def update_proxy_config(self, yaml_file):
+        """更新代理配置"""
+        try:
+            # 读取新的 YAML 文件
+            with open(yaml_file, 'r') as f:
+                yaml_content = f.read()
+                
+            # 转换为 base64
+            proxy_base64 = base64.b64encode(yaml_content.encode('utf-8')).decode('utf-8')
+            
+            # 保存到 Firebase
+            ref = db.reference('proxy_config')
+            ref.set(proxy_base64)
+            
+            # 更新本地代理设置
+            with open('proxy.yaml', 'w') as f:
+                f.write(yaml_content)
+                
+            self.set_proxy_from_yaml()
+            logger.info("代理配置已更新")
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新代理配置失败: {str(e)}")
+            return False
 
 if __name__ == "__main__":
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
