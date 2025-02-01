@@ -119,38 +119,60 @@ def change_password_handler(username):
     logger.info(f"为账号 {username} 生成新密码: {password}")
     return password
 
-def create_chat_completion(messages, use_lingyi=False):
-    """创建聊天完成，只使用灵医万物"""
-    try:
-        # 使用灵医万物 API
-        headers = {
-            "Authorization": f"Bearer {LINGYI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "yi-lightning",
-            "messages": messages,
-            "temperature": 0.50,
-            "top_p": 0.9,
-            "max_tokens": 95
-        }
-        # 确保 API URL 完整
-        api_url = LINGYI_API_BASE if LINGYI_API_BASE.startswith('http') else 'https://api.lingyiwanwu.com/v1/chat/completions'
-        response = requests.post(
-            api_url,
-            headers=headers,
-            json=payload
-        )
-        if response.status_code == 200:
-            content = response.json()['choices'][0]['message']['content']
-            if "None [200] GET" in content:  # 检查是否是不支持的文件类型
-                return "Unsupported file type 😭", True
-            return content, True
-        else:
-            raise Exception(f"灵医万物 API 错误: {response.text}")
-    except Exception as e:
-        logger.error(f"AI 调用失败: {str(e)}")
-        return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
+def create_chat_completion(messages, use_lingyi=False, max_retries=3, retry_delay=2):
+    """创建聊天回复，添加重试机制"""
+    retries = 0
+    while retries < max_retries:
+        try:
+            if use_lingyi:
+                # 使用灵医万物 API
+                logger.info(f"尝试调用灵医万物 API [尝试次数: {retries + 1}/{max_retries}]")
+                response = requests.post(
+                    LINGYI_API_BASE,
+                    headers={"Authorization": f"Bearer {LINGYI_API_KEY}"},
+                    json={"messages": messages}
+                )
+                
+                if response.status_code == 200:
+                    return response.json()["choices"][0]["message"]["content"], True
+                    
+                # 如果是 504 或其他错误，等待后重试
+                logger.warning(f"灵医万物 API 请求失败 [状态码: {response.status_code}]，等待 {retry_delay} 秒后重试")
+                time.sleep(retry_delay)
+                retries += 1
+                continue
+                
+            else:
+                # 使用 OpenAI API
+                logger.info(f"尝试调用 OpenAI API [尝试次数: {retries + 1}/{max_retries}]")
+                response = requests.post(
+                    OPENAI_API_BASE,
+                    headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                    json={
+                        "model": "gpt-3.5-turbo",
+                        "messages": messages,
+                        "temperature": 0.7
+                    }
+                )
+                
+                if response.status_code == 200:
+                    return response.json()["choices"][0]["message"]["content"], False
+                    
+                # 如果是 OpenAI API 错误，切换到灵医万物
+                logger.warning(f"OpenAI API 请求失败 [状态码: {response.status_code}]，切换到灵医万物")
+                return create_chat_completion(messages, use_lingyi=True)
+                
+        except Exception as e:
+            logger.error(f"AI 调用失败: {str(e)}")
+            if retries < max_retries - 1:
+                logger.info(f"等待 {retry_delay} 秒后重试")
+                time.sleep(retry_delay)
+                retries += 1
+                continue
+            break
+            
+    # 所有重试都失败后返回错误消息
+    return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", False
 
 def call_memory_ai(messages):
     """调用 GROQ API 进行记忆管理"""
@@ -307,11 +329,11 @@ class ChatHistoryManager:
 
     def add_message(self, thread_id, role, content, metadata=None):
         """添加新消息到对话历史"""
+        thread_id = str(thread_id)
+        
         if thread_id not in self.conversations:
             self.conversations[thread_id] = []
             
-        thread_id = str(thread_id)
-        
         message = {
             'timestamp': datetime.now().isoformat(),
             'role': role,
@@ -323,8 +345,13 @@ class ChatHistoryManager:
         self.conversations[thread_id].append(message)
         logger.info(f"添加新消息 [对话ID: {thread_id}] - {role}: {content[:100]}...")
         
-        # 保存到 Firebase
-        self.save_conversation(thread_id)
+        # 直接保存到 Firebase
+        try:
+            ref = db.reference('chat_histories')
+            ref.child(thread_id).set(self.conversations[thread_id])
+            logger.info(f"已保存对话到 Firebase")
+        except Exception as e:
+            logger.error(f"保存到 Firebase 失败: {str(e)}")
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -559,6 +586,13 @@ class InstagramBot:
                 logger.error(f"加载历史对话时出错: {str(e)}")
                 conversation = []
             
+            # 先保存用户消息
+            try:
+                self.chat_history.add_message(thread_id, "user", message)
+                logger.info(f"已保存用户消息到 Firebase")
+            except Exception as e:
+                logger.error(f"保存用户消息时出错: {str(e)}")
+            
             # 构建记忆提取提示词
             memory_messages = [
                 {
@@ -669,13 +703,12 @@ class InstagramBot:
                     self.use_lingyi = True
                 logger.info(f"对话AI回复: {response_text}")
                 
-                # 保存对话记录
+                # 保存 AI 回复
                 try:
-                    self.chat_history.add_message(thread_id, "user", message)
                     self.chat_history.add_message(thread_id, "assistant", response_text)
-                    logger.info(f"已保存对话记录")
+                    logger.info(f"已保存 AI 回复到 Firebase")
                 except Exception as e:
-                    logger.error(f"保存对话记录时出错: {str(e)}")
+                    logger.error(f"保存 AI 回复时出错: {str(e)}")
                 
                 return response_text
             except Exception as e:
