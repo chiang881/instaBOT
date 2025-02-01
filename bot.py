@@ -481,6 +481,9 @@ class InstagramBot:
     def login(self):
         """登录 Instagram"""
         try:
+            # 初始延迟
+            time.sleep(random.uniform(2, 4))
+            
             # 尝试从 Firebase 加载会话
             ref = db.reference('instagram_session')
             session_data = ref.get()
@@ -490,27 +493,40 @@ class InstagramBot:
                 # 将会话数据写入临时文件
                 with open('session.json', 'w') as f:
                     json.dump(session_data, f)
+                
+                time.sleep(random.uniform(1, 2))  # 写入文件后延迟
                     
                 try:
                     # 使用会话文件登录
                     self.client.load_settings('session.json')
-                    time.sleep(random.uniform(2, 4))  # 添加随机延迟
+                    time.sleep(random.uniform(2, 4))  # 加载设置后延迟
+                    
+                    # 模拟输入用户名前的延迟
+                    time.sleep(random.uniform(1, 2))
                     self.client.login(self.username, self.password)
+                    time.sleep(random.uniform(3, 5))  # 登录后的冷却时间
+                    
                     logger.info("使用已保存的会话登录成功")
                     
                     # 验证登录状态
                     if not self.client.user_id:
                         raise Exception("登录状态验证失败")
-                        
+                    
+                    time.sleep(random.uniform(2, 3))  # 验证后延迟
                     return True
+                    
                 except Exception as e:
                     logger.error(f"使用已保存会话登录失败: {str(e)}")
-                    # 继续尝试使用用户名密码登录
+                    time.sleep(random.uniform(4, 6))  # 登录失败后的冷却时间
             
             # 使用用户名密码登录
             logger.info("尝试使用用户名密码登录")
-            time.sleep(random.uniform(3, 5))  # 添加更长的随机延迟
+            time.sleep(random.uniform(3, 5))  # 准备登录前的延迟
+            
+            # 模拟输入用户名和密码的时间
+            time.sleep(random.uniform(2, 3))
             self.client.login(self.username, self.password)
+            time.sleep(random.uniform(4, 6))  # 登录后的冷却时间
             
             # 验证登录状态
             if not self.client.user_id:
@@ -518,29 +534,25 @@ class InstagramBot:
             
             try:
                 # 保存新会话到 Firebase
+                time.sleep(random.uniform(1, 2))  # 保存前延迟
                 self.client.dump_settings('session.json')
+                
+                time.sleep(random.uniform(1, 2))  # 读取前延迟
                 with open('session.json', 'r') as f:
                     session_data = json.load(f)
+                    
+                time.sleep(random.uniform(1, 2))  # Firebase 操作前延迟
                 ref.set(session_data)
                 logger.info("登录成功并保存新会话到 Firebase")
             except Exception as e:
                 logger.error(f"保存会话到 Firebase 失败: {str(e)}")
-                # 即使保存失败也继续运行
             
+            time.sleep(random.uniform(2, 3))  # 完成登录后的最终延迟
             return True
             
         except Exception as e:
             logger.error(f"登录失败: {str(e)}")
-            try:
-                # 即使登录失败也尝试保存会话
-                self.client.dump_settings('session.json')
-                with open('session.json', 'r') as f:
-                    session_data = json.load(f)
-                ref.set(session_data)
-                logger.info("已保存会话到 Firebase")
-            except Exception as save_error:
-                logger.error(f"保存会话失败: {str(save_error)}")
-            
+            time.sleep(random.uniform(5, 8))  # 登录失败后的长冷却时间
             return False
 
     def summarize_context(self, context):
@@ -849,6 +861,9 @@ class InstagramBot:
         
         while True:
             try:
+                # 每次循环开始前的随机延迟
+                time.sleep(random.uniform(2, 4))
+                
                 # 检查是否需要退出
                 if not first_check and (datetime.now() - last_message_time).total_seconds() > 120:
                     logger.info("超过2分钟没有新消息，退出监听")
@@ -863,9 +878,12 @@ class InstagramBot:
                 has_new_message = False
                 
                 try:
-                    # 添加随机延迟
-                    time.sleep(random.uniform(2, 4))
+                    # 获取未读消息前的延迟
+                    time.sleep(random.uniform(3, 5))
                     inbox = self.client.direct_threads(selected_filter="unread")
+                    
+                    # 处理每个对话前的延迟
+                    time.sleep(random.uniform(2, 3))
                     
                     for thread in inbox:
                         thread_id = thread.id
@@ -875,41 +893,58 @@ class InstagramBot:
                             has_new_message = True
                             last_message_time = datetime.now()
                             
+                            # 处理每条消息前的延迟
+                            time.sleep(random.uniform(2, 4))
+                            
                             for message in messages:
                                 if message.item_type == "text":
+                                    # 生成回复前的思考时间
+                                    time.sleep(random.uniform(3, 6))
                                     response = self.get_ai_response(message.text, thread_id)
-                                    time.sleep(random.uniform(1, 3))  # 发送消息前的延迟
+                                    
+                                    # 模拟打字时间
+                                    typing_time = len(response) * 0.1  # 每个字符0.1秒
+                                    time.sleep(min(typing_time, 8))  # 最长8秒
+                                    
                                     self.client.direct_answer(thread_id, response)
+                                    
+                                    # 发送消息后的冷却时间
+                                    time.sleep(random.uniform(2, 4))
                             
-                            # 标记为已读
-                            time.sleep(random.uniform(1, 2))  # 标记已读前的延迟
+                            # 标记为已读前的延迟
+                            time.sleep(random.uniform(2, 3))
                             self.client.direct_thread_mark_seen(thread_id)
+                            
+                            # 处理完一个对话后的休息时间
+                            time.sleep(random.uniform(3, 5))
                     
-                    consecutive_errors = 0  # 重置错误计数
+                    consecutive_errors = 0
                     
                 except Exception as e:
                     logger.error(f"消息处理出错: {str(e)}")
                     if "login_required" in str(e):
                         logger.warning("需要重新登录")
+                        time.sleep(random.uniform(4, 6))  # 重新登录前的冷却时间
                         if self.login():
                             logger.info("重新登录成功")
-                            time.sleep(random.uniform(3, 5))  # 重新登录后的延迟
+                            time.sleep(random.uniform(5, 8))  # 重新登录后的长冷却时间
                             continue
                     consecutive_errors += 1
-                    time.sleep(random.uniform(5, 8))  # 出错后的延迟
+                    time.sleep(random.uniform(8, 12))  # 错误后的长冷却时间
                 
                 if has_new_message:
                     first_check = False
+                    time.sleep(random.uniform(3, 5))  # 处理完消息后的休息时间
                 elif first_check:
                     time.sleep(30)  # 首次检查无消息时等待30秒
                     first_check = False
                 else:
-                    time.sleep(random.uniform(5, 8))  # 正常检查间隔
+                    time.sleep(random.uniform(8, 12))  # 无消息时的较长间隔
                     
             except Exception as e:
                 logger.error(f"消息处理循环出错: {str(e)}")
                 consecutive_errors += 1
-                time.sleep(random.uniform(5, 8))
+                time.sleep(random.uniform(10, 15))  # 循环错误后的很长冷却时间
         
         return True
 
