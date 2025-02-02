@@ -13,10 +13,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: chiang881/instaBOT/.github/actions/checkout@main
+      uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: chiang881/instaBOT/.github/actions/setup-python@main
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         
@@ -51,9 +51,12 @@ jobs:
         echo "Timezone: ${{ toJson(github.event.client_payload.device_info.timezone) }}"
         echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}"
         
+    - name: Create chat history directory
+      run: mkdir -p chat_history
+        
     - name: Upload chat history
       if: always()
-      uses: chiang881/instaBOT/.github/actions/upload-artifact@main
+      uses: actions/upload-artifact@v4
       with:
         name: chat-history-${{ github.run_id }}
         path: chat_history/
@@ -61,7 +64,21 @@ jobs:
         
     - name: Clean old artifacts
       if: always()
-      uses: chiang881/instaBOT/.github/actions/remove-artifacts@main
-      with:
-        age: '90 days'
-        skip-recent: 5 
+      run: |
+        # Get list of artifacts
+        artifacts=$(curl -s \
+          -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/actions/artifacts")
+        
+        # Keep only last 5 artifacts
+        artifact_ids=$(echo "$artifacts" | jq -r '.artifacts[5:] | .[].id')
+        
+        # Delete old artifacts
+        for id in $artifact_ids; do
+          curl -X DELETE \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$id"
+          echo "Deleted artifact $id"
+        done 
