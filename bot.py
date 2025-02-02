@@ -325,6 +325,7 @@ class ChatHistoryManager:
     def add_message(self, thread_id, role, content, metadata=None):
         """添加新消息到对话历史"""
         thread_id = str(thread_id)
+        masked_thread_id = f"****{thread_id[-4:]}"
         
         if thread_id not in self.conversations:
             self.conversations[thread_id] = []
@@ -338,13 +339,13 @@ class ChatHistoryManager:
             message['metadata'] = metadata
             
         self.conversations[thread_id].append(message)
-        logger.info(f"添加新消息 [对话ID: {thread_id}] - {role}: {content[:100]}...")
+        logger.info(f"添加新消息 [对话ID: {masked_thread_id}] - {role}: ***")
         
         # 直接保存到 Firebase
         try:
             ref = db.reference('chat_histories')
             ref.child(thread_id).set(self.conversations[thread_id])
-            logger.info(f"已保存对话到 Firebase")
+            logger.info(f"已保存对话到 Firebase [对话ID: {masked_thread_id}]")
         except Exception as e:
             logger.error(f"保存到 Firebase 失败: {str(e)}")
 
