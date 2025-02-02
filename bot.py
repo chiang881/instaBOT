@@ -180,18 +180,25 @@ def call_memory_ai(messages):
             logger.error("未找到 GEMINI_API_KEY 环境变量")
             return "none"
             
-        # 从 Firebase 获取当前对话历史
-        thread_id = messages[1].get("metadata", {}).get("thread_id")
+        # 检查消息格式
+        if not isinstance(messages, list) or len(messages) < 2:
+            logger.error(f"消息格式错误: {messages}")
+            return "none"
+            
+        # 安全地获取 thread_id
+        metadata = messages[1].get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        thread_id = metadata.get("thread_id")
+        
         logger.info(f"尝试获取对话历史 [原始对话ID: {thread_id}]")
+        logger.debug(f"消息内容: {json.dumps(messages[1], ensure_ascii=False)}")
         
         if not thread_id:
             logger.error("消息中未找到对话 ID")
-            logger.debug(f"消息内容: {json.dumps(messages[1], ensure_ascii=False)}")
+            logger.debug(f"完整消息结构: {json.dumps(messages, ensure_ascii=False, indent=2)}")
             return "none"
             
-        # 记录完整的消息结构
-        logger.debug(f"完整消息结构: {json.dumps(messages, ensure_ascii=False, indent=2)}")
-        
         ref = db.reference(f'chat_histories/{thread_id}')
         conversation = ref.get()
         
@@ -685,7 +692,10 @@ class InstagramBot:
                 {
                     "role": "user",
                     "content": f"历史对话：{json.dumps(conversation, ensure_ascii=False)}\n\n当前问题：{message}",
-                    "metadata": {"thread_id": thread_id}  # 添加原始对话ID
+                    "metadata": {
+                        "thread_id": thread_id,
+                        "timestamp": datetime.now().isoformat()
+                    }
                 }
             ]
             
@@ -840,8 +850,17 @@ class InstagramBot:
             
             # 先保存用户消息
             for message in messages:
-                self.chat_history.add_message(thread_id, 'user', message.text, 
-                                          metadata={'message_id': message.id})
+                self.chat_history.add_message(
+                    thread_id=thread_id,
+                    role='user',
+                    content=message.text,
+                    metadata={
+                        'message_id': message.id,
+                        'thread_id': thread_id,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                logger.info(f"已保存用户消息 [对话ID: {thread_id}]")
             
             # 生成AI回复
             logger.debug(f"开始生成AI回复 [对话ID: {thread_id}]")
@@ -855,7 +874,16 @@ class InstagramBot:
                 logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
                 
                 # 保存AI回复
-                self.chat_history.add_message(thread_id, 'assistant', ai_response)
+                self.chat_history.add_message(
+                    thread_id=thread_id,
+                    role='assistant',
+                    content=ai_response,
+                    metadata={
+                        'thread_id': thread_id,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                )
+                logger.info(f"已保存AI回复 [对话ID: {thread_id}]")
                 
                 # 标记所有消息为已处理
                 for message in messages:
