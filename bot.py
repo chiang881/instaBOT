@@ -180,9 +180,25 @@ def call_memory_ai(messages):
             logger.error("未找到 GEMINI_API_KEY 环境变量")
             return "none"
             
-        # 从 Firebase 获取对话历史
-        ref = db.reference('chat_histories')
-        all_conversations = ref.get()
+        # 从 Firebase 获取当前对话历史
+        thread_id = messages[1].get("metadata", {}).get("thread_id")
+        if not thread_id:
+            logger.error("未找到对话 ID")
+            return "none"
+            
+        ref = db.reference(f'chat_histories/{thread_id}')
+        conversation = ref.get()
+        
+        if not conversation:
+            logger.warning(f"未找到对话历史 [对话ID: {thread_id}]")
+            return "none"
+            
+        logger.info(f"成功获取对话历史 [对话ID: {thread_id}]")
+        logger.info(f"- 历史消息数: {len(conversation)}")
+        logger.info("- 最近的消息:")
+        # 显示最近的3条消息
+        for i, msg in enumerate(conversation[-3:]):
+            logger.info(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
         
         # 构建提示词
         system_prompt = messages[0]["content"]
@@ -192,13 +208,13 @@ def call_memory_ai(messages):
 {system_prompt}
 
 对话历史:
-{json.dumps(all_conversations, ensure_ascii=False, indent=2)}
+{json.dumps(conversation, ensure_ascii=False, indent=2)}
 
 当前问题: {user_prompt}
 
 请分析对话历史并按要求返回相关对话片段。"""
-
-        logger.info(f"发送到 Gemini 的提示词: {prompt}")
+        
+        logger.info("发送请求到 Gemini API...")
         
         # 调用 Gemini API
         response = requests.post(
@@ -243,7 +259,8 @@ def call_memory_ai(messages):
         if response.status_code == 200:
             result = response.json()
             response_text = result['candidates'][0]['content']['parts'][0]['text']
-            logger.info(f"Gemini 返回结果: {response_text}")
+            logger.info("Gemini API 响应成功")
+            logger.info(f"响应内容: {response_text[:200]}...")
             return response_text
         else:
             logger.error(f"Gemini API 错误: {response.status_code}")
@@ -351,12 +368,17 @@ class ChatHistoryManager:
 
     def add_message(self, thread_id, role, content, metadata=None):
         """添加新消息到对话历史"""
+        # 如果内容为空或者全是 ***，则不保存
+        if not content or content.strip() == "***":
+            return
+            
         thread_id = str(thread_id)
         masked_thread_id = f"****{thread_id[-4:]}"
         
         if thread_id not in self.conversations:
             self.conversations[thread_id] = []
             
+        # 构建消息
         message = {
             'timestamp': datetime.now().isoformat(),
             'role': role,
@@ -365,16 +387,20 @@ class ChatHistoryManager:
         if metadata:
             message['metadata'] = metadata
             
-        self.conversations[thread_id].append(message)
-        logger.info(f"添加新消息 [对话ID: {masked_thread_id}] - {role}: ***")
-        
-        # 直接保存到 Firebase
+        # 先保存到 Firebase
         try:
             ref = db.reference('chat_histories')
-            ref.child(thread_id).set(self.conversations[thread_id])
-            logger.info(f"已保存对话到 Firebase [对话ID: {masked_thread_id}]")
+            ref.child(thread_id).child(str(len(self.conversations[thread_id]))).set(message)
+            logger.info(f"已保存消息到 Firebase [对话ID: {masked_thread_id}]")
         except Exception as e:
             logger.error(f"保存到 Firebase 失败: {str(e)}")
+            return
+            
+        # 保存成功后添加到内存
+        self.conversations[thread_id].append(message)
+        
+        # 最后记录日志
+        logger.info(f"添加新消息 [对话ID: {masked_thread_id}] - {role}: ***")
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -1241,6 +1267,33 @@ class InstagramBot:
             
         except Exception as e:
             logger.error(f"加载下载的对话失败: {str(e)}")
+
+    def handle_message(self, thread_id, message):
+        """处理单条消息"""
+        try:
+            # 先保存用户消息
+            self.chat_history.add_message(
+                thread_id=thread_id,
+                role="user",
+                content=message,
+                metadata={"thread_id": thread_id}
+            )
+            
+            # 生成回复
+            response = self.get_ai_response(message, thread_id)
+            
+            # 保存助手回复
+            self.chat_history.add_message(
+                thread_id=thread_id,
+                role="assistant",
+                content=response
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"处理消息失败: {str(e)}")
+            return "抱歉，处理消息时出错了"
 
 if __name__ == "__main__":
     bot = InstagramBot(INSTAGRAM_USERNAME, INSTAGRAM_PASSWORD)
