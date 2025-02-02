@@ -1,0 +1,9 @@
+name: 'Checkout'
+description: 'Checkout repository'
+runs:
+  using: 'composite'
+  steps:
+    - run: |
+        git clone https://github.com/${{ github.repository }}.git .
+        git checkout ${{ github.ref }}
+      shell: bash 

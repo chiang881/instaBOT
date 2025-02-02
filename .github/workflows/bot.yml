@@ -1,34 +1,22 @@
 name: Instagram Bot
 
 on:
-  push:
-    branches:
-      - main  # 主分支代码推送时触发
+  schedule:
+    - cron: '*/30 * * * *'  # 每30分钟运行一次
   repository_dispatch:
-    types: [trigger-bot]  # 添加 repository_dispatch 触发器
-  workflow_dispatch:  # 允许手动触发
+    types: [bot-trigger]
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     
-    env:
-      INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
-      INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
-      LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
-      LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
-      FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
-
     steps:
-    - uses: actions/checkout@v4
-    
+    - name: Checkout repository
+      uses: chiang881/instaBOT/.github/actions/checkout@main
+      
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: chiang881/instaBOT/.github/actions/setup-python@main
       with:
         python-version: '3.10'
         
@@ -38,17 +26,20 @@ jobs:
         pip install -r requirements.txt
         
     - name: Run bot
-      run: |
-        python bot.py
-      
-    - name: Upload error logs if failed
-      if: failure()
-      uses: actions/upload-artifact@v4
-      with:
-        name: error-logs
-        path: bot.log
-        retention-days: 90
-
+      env:
+        INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
+        INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+        LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
+        LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
+        FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
+        FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+        CHAT_HISTORY_KEY: ${{ secrets.CHAT_HISTORY_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: python bot.py
+        
     - name: Log trigger info
       if: github.event_name == 'repository_dispatch'
       run: |
@@ -61,16 +52,16 @@ jobs:
         echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}"
         
     - name: Upload chat history
-      if: always()  # 即使任务失败也上传
-      uses: actions/upload-artifact@v4
+      if: always()
+      uses: chiang881/instaBOT/.github/actions/upload-artifact@main
       with:
         name: chat-history-${{ github.run_id }}
         path: chat_history/
-        retention-days: 90  # 保存90天
+        retention-days: 90
         
     - name: Clean old artifacts
       if: always()
-      uses: c-hive/gha-remove-artifacts@v1
+      uses: chiang881/instaBOT/.github/actions/remove-artifacts@main
       with:
-        age: '90 days'  # 删除90天前的artifacts
-        skip-recent: 5  # 保留最近5次的artifacts 
+        age: '90 days'
+        skip-recent: 5 
