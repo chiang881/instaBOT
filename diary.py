@@ -31,7 +31,10 @@ class DiaryGenerator:
         # Supabase 配置
         self.supabase_url = os.getenv('SUPABASE_URL', 'https://vxkqsvwnejnoqiwxrzen.supabase.co')
         self.supabase_key = os.getenv('SUPABASE_KEY')
-        self.supabase: Client = create_client(self.supabase_url, self.supabase_key)
+        self.supabase: Client = create_client(
+            supabase_url=self.supabase_url,
+            supabase_key=self.supabase_key
+        )
         
         # 初始化 Firebase
         self._init_firebase()
