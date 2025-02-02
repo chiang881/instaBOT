@@ -419,52 +419,38 @@ class DiaryGenerator:
             raise
 
     def save_diary(self, content):
-        """保存日记到本地和 Supabase（如果可用）"""
+        """保存日记到 Supabase"""
         try:
             current_time = datetime.now(self.timezone)
             date_str = current_time.strftime('%Y-%m-%d')
             
-            # 先保存到本地
-            os.makedirs('diaries', exist_ok=True)
-            file_path = os.path.join('diaries', f"{date_str}.txt")
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            logger.info(f"日记已保存到本地: {file_path}")
-            
-            # 尝试保存到 Supabase
+            # 上传文件到存储
             try:
-                # 上传文件到存储
-                storage_path = None
-                try:
-                    bucket_name = 'diaries'
-                    storage_file_name = f"{date_str}.txt"
+                bucket_name = 'diaries'
+                storage_file_name = f"{date_str}.txt"
+                
+                # 将内容转换为字节
+                file_data = content.encode('utf-8')
+                
+                # 上传文件，如果文件已存在则覆盖
+                result = self.supabase.storage.from_(bucket_name).upload(
+                    path=storage_file_name,
+                    file=file_data,
+                    file_options={
+                        "content-type": "text/plain; charset=utf-8",
+                        "x-upsert": "true"  # 如果文件存在则覆盖
+                    }
+                )
+                
+                if isinstance(result, dict) and 'error' in result:
+                    raise Exception(f"上传失败: {result['error']}")
                     
-                    # 读取文件内容
-                    with open(file_path, 'rb') as f:
-                        file_data = f.read()
-                    
-                    # 上传文件，如果文件已存在则覆盖
-                    result = self.supabase.storage.from_(bucket_name).upload(
-                        path=storage_file_name,
-                        file=file_data,
-                        file_options={
-                            "content-type": "text/plain; charset=utf-8",
-                            "x-upsert": "true"  # 如果文件存在则覆盖
-                        }
-                    )
-                    
-                    if isinstance(result, dict) and 'error' in result:
-                        raise Exception(f"上传失败: {result['error']}")
-                        
-                    storage_path = f"{bucket_name}/{storage_file_name}"
-                    logger.info(f"日记文件已上传到 Supabase 存储: {storage_path}")
-                    
-                    # 获取文件的公共 URL
-                    file_url = self.supabase.storage.from_(bucket_name).get_public_url(storage_file_name)
-                    logger.info(f"文件公共访问 URL: {file_url}")
-                    
-                except Exception as e:
-                    logger.warning(f"上传文件到 Supabase 存储失败: {str(e)}")
+                storage_path = f"{bucket_name}/{storage_file_name}"
+                logger.info(f"日记文件已上传到 Supabase 存储: {storage_path}")
+                
+                # 获取文件的公共 URL
+                file_url = self.supabase.storage.from_(bucket_name).get_public_url(storage_file_name)
+                logger.info(f"文件公共访问 URL: {file_url}")
                 
                 # 保存记录到数据库
                 diary_data = {
@@ -472,15 +458,24 @@ class DiaryGenerator:
                     'content': content,
                     'timestamp': current_time.isoformat(),
                     'created_at': current_time.isoformat(),
-                    'file_path': storage_path
+                    'file_path': storage_path,
+                    'file_url': file_url
                 }
                 
                 response = self.supabase.table('diaries').insert(diary_data).execute()
-                if hasattr(response, 'error') and response.error is not None:
-                    raise Exception(f"Supabase 错误: {response.error}")
-                logger.info("日记已保存到 Supabase 数据库")
+                data = response.data if hasattr(response, 'data') else None
+                error = response.error if hasattr(response, 'error') else None
+                
+                if error:
+                    raise Exception(f"数据库错误: {error}")
+                elif not data:
+                    raise Exception("数据库返回空数据")
+                    
+                logger.info("日记已成功保存到 Supabase")
+                
             except Exception as e:
-                logger.warning(f"保存到 Supabase 失败（将只保存在本地）: {str(e)}")
+                logger.error(f"保存到 Supabase 失败: {str(e)}")
+                raise
                 
         except Exception as e:
             logger.error(f"保存日记失败: {str(e)}")
