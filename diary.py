@@ -36,8 +36,9 @@ class DiaryGenerator:
             supabase_key=self.supabase_key
         )
         
-        # 初始化 Firebase
+        # 初始化数据库
         self._init_firebase()
+        self._init_supabase()
         
         # 设置时区为北京时间
         self.timezone = pytz.timezone('Asia/Shanghai')
@@ -62,6 +63,22 @@ class DiaryGenerator:
             
         except Exception as e:
             logger.error(f"初始化 Firebase 失败: {str(e)}")
+            raise
+            
+    def _init_supabase(self):
+        """初始化 Supabase 数据库"""
+        try:
+            # 检查表是否存在
+            try:
+                self.supabase.table('diaries').select('*').limit(1).execute()
+                logger.info("Supabase diaries 表已存在")
+            except Exception as e:
+                logger.warning("Supabase diaries 表不存在，尝试创建")
+                # 如果表不存在，保存到本地文件
+                logger.info("将改为只保存到本地文件")
+                
+        except Exception as e:
+            logger.error(f"初始化 Supabase 失败: {str(e)}")
             raise
             
     def get_today_conversations(self):
@@ -307,34 +324,33 @@ class DiaryGenerator:
             raise
 
     def save_diary(self, content):
-        """保存日记到 Supabase 和本地"""
+        """保存日记到本地和 Supabase（如果可用）"""
         try:
             current_time = datetime.now(self.timezone)
-            diary_data = {
-                'date': current_time.strftime('%Y-%m-%d'),
-                'content': content,
-                'timestamp': current_time.isoformat(),
-                'created_at': current_time.isoformat()  # Supabase 时间戳
-            }
             
-            # 保存到 Supabase
+            # 先保存到本地
+            os.makedirs('diaries', exist_ok=True)
+            file_path = os.path.join('diaries', f"{current_time.strftime('%Y-%m-%d')}.txt")
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            logger.info(f"日记已保存到本地: {file_path}")
+            
+            # 尝试保存到 Supabase
             try:
+                diary_data = {
+                    'date': current_time.strftime('%Y-%m-%d'),
+                    'content': content,
+                    'timestamp': current_time.isoformat(),
+                    'created_at': current_time.isoformat()
+                }
+                
                 response = self.supabase.table('diaries').insert(diary_data).execute()
                 if hasattr(response, 'error') and response.error is not None:
                     raise Exception(f"Supabase 错误: {response.error}")
                 logger.info("日记已保存到 Supabase")
             except Exception as e:
-                logger.error(f"保存到 Supabase 失败: {str(e)}")
-                raise
-            
-            # 同时保存到本地
-            os.makedirs('diaries', exist_ok=True)
-            file_path = os.path.join('diaries', f"{current_time.strftime('%Y-%m-%d')}.txt")
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+                logger.warning(f"保存到 Supabase 失败（将只保存在本地）: {str(e)}")
                 
-            logger.info(f"日记已保存到本地: {file_path}")
-            
         except Exception as e:
             logger.error(f"保存日记失败: {str(e)}")
             raise
