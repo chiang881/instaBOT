@@ -182,10 +182,16 @@ def call_memory_ai(messages):
             
         # 从 Firebase 获取当前对话历史
         thread_id = messages[1].get("metadata", {}).get("thread_id")
+        logger.info(f"尝试获取对话历史 [原始对话ID: {thread_id}]")
+        
         if not thread_id:
-            logger.error("未找到对话 ID")
+            logger.error("消息中未找到对话 ID")
+            logger.debug(f"消息内容: {json.dumps(messages[1], ensure_ascii=False)}")
             return "none"
             
+        # 记录完整的消息结构
+        logger.debug(f"完整消息结构: {json.dumps(messages, ensure_ascii=False, indent=2)}")
+        
         ref = db.reference(f'chat_histories/{thread_id}')
         conversation = ref.get()
         
@@ -625,26 +631,20 @@ class InstagramBot:
     def get_ai_response(self, message, thread_id):
         """获取AI回复"""
         try:
+            # 先记录原始对话ID
+            logger.info(f"开始处理对话 [原始对话ID: {thread_id}]")
+            
             # 隐藏敏感信息的线程ID
             masked_thread_id = f"****{str(thread_id)[-4:]}"
-            
-            logger.info(f"当前问题: ***")
-            logger.info(f"处理对话 [对话ID: {masked_thread_id}]")
+            logger.info(f"处理对话 [掩码对话ID: {masked_thread_id}]")
             
             # 加载历史对话
             try:
                 conversation = self.chat_history.load_conversation(thread_id)
-                logger.info(f"加载历史对话 [对话ID: {masked_thread_id}] - {len(conversation)} 条消息")
+                logger.info(f"加载历史对话 [对话ID: {thread_id}] - {len(conversation)} 条消息")
             except Exception as e:
                 logger.error(f"加载历史对话时出错: {str(e)}")
                 conversation = []
-            
-            # 先保存用户消息
-            try:
-                self.chat_history.add_message(thread_id, "user", message)
-                logger.info(f"已保存用户消息到 Firebase")
-            except Exception as e:
-                logger.error(f"保存用户消息时出错: {str(e)}")
             
             # 构建记忆提取提示词
             memory_messages = [
@@ -684,12 +684,12 @@ class InstagramBot:
                 },
                 {
                     "role": "user",
-                    "content": f"历史对话：{json.dumps(conversation, ensure_ascii=False)}\n\n当前问题：{message}"
+                    "content": f"历史对话：{json.dumps(conversation, ensure_ascii=False)}\n\n当前问题：{message}",
+                    "metadata": {"thread_id": thread_id}  # 添加原始对话ID
                 }
             ]
             
-            # 调用记忆AI获取相关记忆
-            logger.info(f"开始调用记忆AI [对话ID: {masked_thread_id}]")
+            logger.info(f"开始调用记忆AI [对话ID: {thread_id}]")
             logger.info(f"当前问题: {message}")
             memory_response = call_memory_ai(memory_messages)
             logger.info(f"记忆AI返回结果: ***")
@@ -753,14 +753,6 @@ class InstagramBot:
                 if switch_to_lingyi:
                     self.use_lingyi = True
                 logger.info(f"对话AI回复: ***")
-                
-                # 保存对话记录
-                try:
-                    self.chat_history.add_message(thread_id, "user", "***")
-                    self.chat_history.add_message(thread_id, "assistant", "***")
-                    logger.info(f"已保存对话记录")
-                except Exception as e:
-                    logger.error(f"保存对话记录时出错: {str(e)}")
                 
                 return response_text
             except Exception as e:
@@ -846,47 +838,32 @@ class InstagramBot:
                 combined_message = messages[0].text
                 logger.info(f"处理单条消息 [对话ID: {thread_id}]")
             
+            # 先保存用户消息
+            for message in messages:
+                self.chat_history.add_message(thread_id, 'user', message.text, 
+                                          metadata={'message_id': message.id})
+            
             # 生成AI回复
             logger.debug(f"开始生成AI回复 [对话ID: {thread_id}]")
             ai_response = self.get_ai_response(combined_message, thread_id)
             logger.debug(f"AI回复内容: {ai_response}")
             time.sleep(random.uniform(2, 5))
-                
+            
             # 使用direct_answer发送回复
             try:
                 self.client.direct_answer(thread_id, ai_response)
                 logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
                 
-                # 记录用户消息和AI回复，包含消息ID
-                for message in messages:
-                    self.chat_history.add_message(thread_id, 'user', message.text, 
-                                                metadata={'message_id': message.id})
+                # 保存AI回复
                 self.chat_history.add_message(thread_id, 'assistant', ai_response)
                 
                 # 标记所有消息为已处理
                 for message in messages:
                     self.processed_messages.add(message.id)
                 self.message_count += 1
+                
             except Exception as e:
                 logger.error(f"发送回复失败: {str(e)}")
-                # 尝试使用direct_send作为备选方案
-                try:
-                    self.client.direct_send(ai_response, thread_ids=[thread_id])
-                    logger.info(f"使用备选方案回复成功 [对话ID: {thread_id}]")
-                    
-                    # 记录用户消息和AI回复，包含消息ID
-                    for message in messages:
-                        self.chat_history.add_message(thread_id, 'user', message.text, 
-                                                    metadata={'message_id': message.id})
-                    self.chat_history.add_message(thread_id, 'assistant', ai_response)
-                    
-                    # 标记所有消息为已处理
-                    for message in messages:
-                        self.processed_messages.add(message.id)
-                    self.message_count += 1
-                except Exception as e2:
-                    logger.error(f"备选方案也失败了: {str(e2)}")
-                    self.handle_exception(e2)
         except Exception as e:
             logger.error(f"处理文本消息时出错: {str(e)}")
             self.handle_exception(e)
