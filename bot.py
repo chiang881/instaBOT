@@ -174,6 +174,12 @@ def call_memory_ai(messages):
     try:
         logger.info("使用 Gemini Flash API 调用记忆管理")
         
+        # 获取并验证 API 密钥
+        api_key = os.getenv('GEMINI_API_KEY')
+        if not api_key:
+            logger.error("未找到 GEMINI_API_KEY")
+            return "none"
+            
         # 从 Firebase 获取对话历史
         ref = db.reference('chat_histories')
         all_conversations = ref.get()
@@ -196,7 +202,7 @@ def call_memory_ai(messages):
         response = requests.post(
             'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
             headers={
-                'x-goog-api-key': os.getenv('GEMINI_API_KEY'),
+                'x-goog-api-key': api_key,
                 'Content-Type': 'application/json'
             },
             json={
