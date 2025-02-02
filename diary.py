@@ -77,15 +77,23 @@ class DiaryGenerator:
             
             # 从 Firebase 获取特定对话
             ref = db.reference(f'chat_histories/{CONVERSATION_ID}')
-            conversation = ref.get()
+            conversation_data = ref.get()
             
-            if not conversation:
+            if not conversation_data:
                 logger.warning(f"未找到指定对话 [ID: {CONVERSATION_ID}]")
                 return []
+            
+            # 合并所有子节点的消息
+            all_messages = []
+            for node_id, messages in conversation_data.items():
+                if isinstance(messages, dict):  # 确保是消息集合
+                    for msg_id, msg in messages.items():
+                        if isinstance(msg, dict) and 'timestamp' in msg:  # 确保是有效的消息
+                            all_messages.append(msg)
                 
             # 筛选今天的消息
             today_messages = []
-            for msg in conversation:
+            for msg in all_messages:
                 try:
                     # 获取消息时间
                     msg_time = datetime.fromisoformat(msg['timestamp'])
