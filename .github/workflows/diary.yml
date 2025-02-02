@@ -19,7 +19,7 @@ on:
     branches:
       - main
     paths:
-      - 'bot.py'  # 只在 bot.py 文件更改时触发
+      - 'diary.py'  # 只在 diary.py 更改时触发
   # 每天定时运行（北京时间 23:00，UTC 15:00）
   schedule:
     - cron: '0 15 * * *'
