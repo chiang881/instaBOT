@@ -48,19 +48,4 @@ jobs:
         echo "Platform: ${{ toJson(github.event.client_payload.device_info.platform) }}"
         echo "Language: ${{ toJson(github.event.client_payload.device_info.language) }}"
         echo "Timezone: ${{ toJson(github.event.client_payload.device_info.timezone) }}"
-        echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}"
-        
-    - name: Upload chat history
-      if: always()  # 即使任务失败也上传
-      uses: actions/upload-artifact@v4
-      with:
-        name: chat-history-${{ github.run_id }}
-        path: chat_history/
-        retention-days: 90  # 保存90天
-        
-    - name: Clean old artifacts
-      if: always()
-      uses: c-hive/gha-remove-artifacts@v1
-      with:
-        age: '90 days'  # 删除90天前的artifacts
-        skip-recent: 5  # 保留最近5次的artifacts 
+        echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}" 
