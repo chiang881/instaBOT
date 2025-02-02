@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
+      LOG_LEVEL: ERROR  # 设置日志级别为 ERROR，隐藏 INFO 日志
       INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
       INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -40,34 +41,30 @@ jobs:
     steps:
     - name: Checkout code
       run: |
-        git clone https://github.com/chiang881/instaBOT.git . > /dev/null 2>&1
-        git checkout ${{ github.sha }} > /dev/null 2>&1
+        git clone https://github.com/chiang881/instaBOT.git .
+        git checkout ${{ github.sha }}
         
     - name: Install Python
       run: |
-        {
-          sudo apt update
-          sudo apt install -y python3 python3-pip
-        } > /dev/null 2>&1
+        sudo apt update
+        sudo apt install -y python3 python3-pip
         
     - name: Install dependencies
       run: |
-        {
-          python3 -m pip install --upgrade pip
-          pip3 install -r requirements.txt
-        } > /dev/null 2>&1
+        python3 -m pip install --upgrade pip
+        pip3 install -r requirements.txt
         
     - name: Run bot
       run: |
-        # 将日志重定向到文件而不是控制台
-        python3 bot.py > bot.log 2>&1
-        # 只输出关键状态信息
-        echo "Bot is running..."
+        python3 bot.py
       
     - name: Log trigger info
       if: github.event_name == 'repository_dispatch'
       run: |
-        {
-          echo "Bot triggered from device"
-          echo "Process completed"
-        } > /dev/null 2>&1 
+        echo "Bot triggered from device:"
+        echo "IP: ${{ toJson(github.event.client_payload.device_info.ip) }}"
+        echo "User Agent: ${{ toJson(github.event.client_payload.device_info.userAgent) }}"
+        echo "Platform: ${{ toJson(github.event.client_payload.device_info.platform) }}"
+        echo "Language: ${{ toJson(github.event.client_payload.device_info.language) }}"
+        echo "Timezone: ${{ toJson(github.event.client_payload.device_info.timezone) }}"
+        echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}" 
