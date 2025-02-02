@@ -170,62 +170,79 @@ def create_chat_completion(messages, use_lingyi=True, max_retries=3, retry_delay
     return "The server is too busy, I'm sorry I can't reply, you can try sending it to me again 😭", True
 
 def call_memory_ai(messages):
-    """调用 GROQ API 进行记忆管理"""
+    """调用 Gemini 1.5 Flash 作为记忆 AI"""
     try:
-        # 检查 API KEY
-        if not GROQ_API_KEY:
-            logger.error("GROQ API KEY 未设置，回退到灵医万物")
-            memory_response, _ = create_chat_completion(messages, use_lingyi=True)
-            return memory_response
-            
-        logger.info("使用 GROQ API 调用记忆管理")
-        headers = {
-            'Authorization': f'Bearer {GROQ_API_KEY}',
-            'Content-Type': 'application/json'
-        }
+        logger.info("使用 Gemini Flash API 调用记忆管理")
         
-        payload = {
-            'model': 'deepseek-r1-distill-llama-70b',  # 改用 deepseek 模型
-            'messages': messages,
-            'temperature': 0.7,
-            'max_tokens': 2000
-        }
+        # 从 Firebase 获取对话历史
+        ref = db.reference('chat_histories')
+        all_conversations = ref.get()
         
+        # 构建提示词
+        system_prompt = messages[0]["content"]
+        user_prompt = messages[1]["content"]
+        prompt = f"""请根据以下规则分析对话历史并回复：
+
+{system_prompt}
+
+对话历史:
+{json.dumps(all_conversations, ensure_ascii=False, indent=2)}
+
+当前问题: {user_prompt}
+
+请分析对话历史并按要求返回相关对话片段。"""
+        
+        # 调用 Gemini API
         response = requests.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            headers=headers,
-            json=payload,
-            timeout=30  # 添加超时设置
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+            headers={
+                'x-goog-api-key': os.getenv('GEMINI_API_KEY'),
+                'Content-Type': 'application/json'
+            },
+            json={
+                'contents': [
+                    {
+                        'parts': [{'text': prompt}]
+                    }
+                ],
+                'generationConfig': {
+                    'temperature': 0.7,
+                    'maxOutputTokens': 2000,
+                    'topP': 0.8,
+                    'topK': 40
+                },
+                'safetySettings': [
+                    {
+                        'category': 'HARM_CATEGORY_HARASSMENT',
+                        'threshold': 'BLOCK_NONE'
+                    },
+                    {
+                        'category': 'HARM_CATEGORY_HATE_SPEECH',
+                        'threshold': 'BLOCK_NONE'
+                    },
+                    {
+                        'category': 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                        'threshold': 'BLOCK_NONE'
+                    },
+                    {
+                        'category': 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                        'threshold': 'BLOCK_NONE'
+                    }
+                ]
+            }
         )
         
-        if response.status_code != 200:
-            logger.error(f"GROQ API 错误: {response.text}")
-            logger.info("回退到灵医万物")
-            memory_response, _ = create_chat_completion(messages, use_lingyi=True)
-            return memory_response
-            
-        result = response.json()['choices'][0]['message']['content']
-        
-        # 处理返回结果，移除 <think> 部分
-        result = re.sub(r'<think>.*?</think>\s*', '', result, flags=re.DOTALL)
-        result = result.strip()
-        
-        # 如果结果包含 JSON 部分，提取它
-        json_match = re.search(r'```json\n([\s\S]*?)\n```', result)
-        if json_match:
-            result = json_match.group(1).strip()
-            
-        return result
-        
-    except Exception as e:
-        logger.error(f"调用记忆 AI 失败: {str(e)}")
-        logger.info("发生错误，回退到灵医万物")
-        try:
-            memory_response, _ = create_chat_completion(messages, use_lingyi=True)
-            return memory_response
-        except Exception as e2:
-            logger.error(f"灵医万物调用也失败了: {str(e2)}")
+        if response.status_code == 200:
+            result = response.json()
+            return result['candidates'][0]['content']['parts'][0]['text']
+        else:
+            logger.error(f"Gemini API 错误: {response.status_code}")
+            logger.error(f"错误信息: {response.text}")
             return "none"
+            
+    except Exception as e:
+        logger.error(f"记忆 AI 调用失败: {str(e)}")
+        return "none"
 
 class ChatHistoryManager:
     def __init__(self):
