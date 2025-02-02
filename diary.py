@@ -85,7 +85,7 @@ class DiaryGenerator:
                 );
                 """
                 
-                # 使用 REST API 创建表
+                # 使用 SQL API 创建表
                 headers = {
                     'apikey': self.supabase_key,
                     'Authorization': f'Bearer {self.supabase_key}',
@@ -94,20 +94,17 @@ class DiaryGenerator:
                 }
                 
                 response = requests.post(
-                    f"{self.supabase_url}/rest/v1/rpc/exec",
+                    f"{self.supabase_url}/rest/v1/sql",
                     headers=headers,
                     json={
-                        "name": "exec",
-                        "arguments": {
-                            "sql": create_table_sql
-                        }
+                        "query": create_table_sql
                     }
                 )
                 
-                if response.status_code == 200:
+                if response.status_code in [200, 201]:
                     logger.info("成功创建 diaries 表")
                 else:
-                    logger.warning(f"创建表失败，状态码: {response.status_code}，将只保存到本地文件")
+                    logger.warning(f"创建表失败，状态码: {response.status_code}，错误: {response.text}，将只保存到本地文件")
                 
         except Exception as e:
             logger.error(f"初始化 Supabase 失败: {str(e)}")
