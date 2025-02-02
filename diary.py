@@ -81,7 +81,8 @@ class DiaryGenerator:
                     date date not null,
                     content text not null,
                     timestamp timestamptz not null,
-                    created_at timestamptz not null default now()
+                    created_at timestamptz not null default now(),
+                    file_path text
                 );
                 """
                 
@@ -106,6 +107,19 @@ class DiaryGenerator:
                 else:
                     logger.warning(f"创建表失败，状态码: {response.status_code}，将只保存到本地文件")
                     logger.debug(f"错误详情: {response.text}")
+                
+            # 检查并创建存储桶
+            try:
+                bucket_name = 'diaries'
+                self.supabase.storage.get_bucket(bucket_name)
+                logger.info("Supabase diaries 存储桶已存在")
+            except Exception as e:
+                logger.warning("Supabase diaries 存储桶不存在，尝试创建")
+                try:
+                    self.supabase.storage.create_bucket(bucket_name)
+                    logger.info("成功创建 diaries 存储桶")
+                except Exception as e:
+                    logger.warning(f"创建存储桶失败: {str(e)}")
                 
         except Exception as e:
             logger.error(f"初始化 Supabase 失败: {str(e)}")
@@ -399,27 +413,47 @@ class DiaryGenerator:
         """保存日记到本地和 Supabase（如果可用）"""
         try:
             current_time = datetime.now(self.timezone)
+            date_str = current_time.strftime('%Y-%m-%d')
             
             # 先保存到本地
             os.makedirs('diaries', exist_ok=True)
-            file_path = os.path.join('diaries', f"{current_time.strftime('%Y-%m-%d')}.txt")
+            file_path = os.path.join('diaries', f"{date_str}.txt")
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             logger.info(f"日记已保存到本地: {file_path}")
             
             # 尝试保存到 Supabase
             try:
+                # 上传文件到存储
+                storage_path = None
+                try:
+                    bucket_name = 'diaries'
+                    storage_file_name = f"{date_str}.txt"
+                    
+                    with open(file_path, 'rb') as f:
+                        self.supabase.storage.from_(bucket_name).upload(
+                            path=storage_file_name,
+                            file=f,
+                            file_options={"content-type": "text/plain"}
+                        )
+                    storage_path = f"{bucket_name}/{storage_file_name}"
+                    logger.info(f"日记文件已上传到 Supabase 存储: {storage_path}")
+                except Exception as e:
+                    logger.warning(f"上传文件到 Supabase 存储失败: {str(e)}")
+                
+                # 保存记录到数据库
                 diary_data = {
-                    'date': current_time.strftime('%Y-%m-%d'),
+                    'date': date_str,
                     'content': content,
                     'timestamp': current_time.isoformat(),
-                    'created_at': current_time.isoformat()
+                    'created_at': current_time.isoformat(),
+                    'file_path': storage_path
                 }
                 
                 response = self.supabase.table('diaries').insert(diary_data).execute()
                 if hasattr(response, 'error') and response.error is not None:
                     raise Exception(f"Supabase 错误: {response.error}")
-                logger.info("日记已保存到 Supabase")
+                logger.info("日记已保存到 Supabase 数据库")
             except Exception as e:
                 logger.warning(f"保存到 Supabase 失败（将只保存在本地）: {str(e)}")
                 
