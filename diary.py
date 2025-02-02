@@ -85,12 +85,21 @@ class DiaryGenerator:
             
             # 合并所有子节点的消息
             all_messages = []
-            for node_id, messages in conversation_data.items():
-                if isinstance(messages, dict):  # 确保是消息集合
-                    for msg_id, msg in messages.items():
-                        if isinstance(msg, dict) and 'timestamp' in msg:  # 确保是有效的消息
-                            all_messages.append(msg)
-                
+            
+            # 处理数据，无论是字典还是列表
+            if isinstance(conversation_data, dict):
+                # 如果是字典（键值对）结构
+                for node_id, messages in conversation_data.items():
+                    if isinstance(messages, dict):
+                        for msg_id, msg in messages.items():
+                            if isinstance(msg, dict) and 'timestamp' in msg:
+                                all_messages.append(msg)
+            elif isinstance(conversation_data, list):
+                # 如果是列表结构
+                for msg in conversation_data:
+                    if isinstance(msg, dict) and 'timestamp' in msg:
+                        all_messages.append(msg)
+            
             # 筛选今天的消息
             today_messages = []
             for msg in all_messages:
