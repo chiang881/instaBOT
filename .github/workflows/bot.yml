@@ -25,6 +25,11 @@ jobs:
       FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
 
     steps:
+    - name: Checkout code
+      run: |
+        git clone https://github.com/chiang881/instaBOT.git .
+        git checkout ${{ github.sha }}
+        
     - name: Install Python
       run: |
         sudo apt update
