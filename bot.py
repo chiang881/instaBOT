@@ -197,6 +197,8 @@ def call_memory_ai(messages):
 当前问题: {user_prompt}
 
 请分析对话历史并按要求返回相关对话片段。"""
+
+        logger.info(f"发送到 Gemini 的提示词: {prompt}")
         
         # 调用 Gemini API
         response = requests.post(
@@ -240,7 +242,9 @@ def call_memory_ai(messages):
         
         if response.status_code == 200:
             result = response.json()
-            return result['candidates'][0]['content']['parts'][0]['text']
+            response_text = result['candidates'][0]['content']['parts'][0]['text']
+            logger.info(f"Gemini 返回结果: {response_text}")
+            return response_text
         else:
             logger.error(f"Gemini API 错误: {response.status_code}")
             logger.error(f"错误信息: {response.text}")
