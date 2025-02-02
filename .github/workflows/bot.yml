@@ -20,6 +20,7 @@ jobs:
       LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
       LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
       FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
 

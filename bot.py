@@ -177,7 +177,7 @@ def call_memory_ai(messages):
         # 获取并验证 API 密钥
         api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
-            logger.error("未找到 GEMINI_API_KEY")
+            logger.error("未找到 GEMINI_API_KEY 环境变量")
             return "none"
             
         # 从 Firebase 获取对话历史
