@@ -104,7 +104,8 @@ class DiaryGenerator:
                 if response.status_code in [200, 201]:
                     logger.info("成功创建 diaries 表")
                 else:
-                    logger.warning(f"创建表失败，状态码: {response.status_code}，错误: {response.text}，将只保存到本地文件")
+                    logger.warning(f"创建表失败，状态码: {response.status_code}，将只保存到本地文件")
+                    logger.debug(f"错误详情: {response.text}")
                 
         except Exception as e:
             logger.error(f"初始化 Supabase 失败: {str(e)}")
