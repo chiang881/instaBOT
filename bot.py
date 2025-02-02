@@ -571,12 +571,16 @@ class InstagramBot:
     def get_ai_response(self, message, thread_id):
         """获取AI回复"""
         try:
-            thread_id = str(thread_id)
+            # 隐藏敏感信息的线程ID
+            masked_thread_id = f"****{str(thread_id)[-4:]}"
+            
+            logger.info(f"当前问题: ***")
+            logger.info(f"处理对话 [对话ID: {masked_thread_id}]")
             
             # 加载历史对话
             try:
                 conversation = self.chat_history.load_conversation(thread_id)
-                logger.info(f"加载历史对话 [对话ID: {thread_id}] - {len(conversation)} 条消息")
+                logger.info(f"加载历史对话 [对话ID: {masked_thread_id}] - {len(conversation)} 条消息")
             except Exception as e:
                 logger.error(f"加载历史对话时出错: {str(e)}")
                 conversation = []
@@ -631,10 +635,10 @@ class InstagramBot:
             ]
             
             # 调用记忆AI获取相关记忆
-            logger.info(f"开始调用记忆AI [对话ID: {thread_id}]")
+            logger.info(f"开始调用记忆AI [对话ID: {masked_thread_id}]")
             logger.info(f"当前问题: {message}")
             memory_response = call_memory_ai(memory_messages)
-            logger.info(f"记忆AI返回结果: {memory_response}")
+            logger.info(f"记忆AI返回结果: ***")
             
             memories = memory_response.strip()
             
@@ -642,9 +646,7 @@ class InstagramBot:
             if memories != "none" and memories.startswith("["):  # 确保是 JSON 数组
                 try:
                     memory_list = json.loads(memories)
-                    logger.info("找到相关历史记忆:")
-                    for msg in memory_list:
-                        logger.info(f"  {msg.get('role')}: {msg.get('content')}")
+                    logger.info("找到相关历史记忆: ***")
                     messages = memory_list + [{"role": "user", "content": message}]
                 except json.JSONDecodeError:
                     logger.warning(f"记忆格式无效，忽略历史记忆")
@@ -696,14 +698,15 @@ class InstagramBot:
                 response_text, switch_to_lingyi = create_chat_completion(messages, self.use_lingyi)
                 if switch_to_lingyi:
                     self.use_lingyi = True
-                logger.info(f"对话AI回复: {response_text}")
+                logger.info(f"对话AI回复: ***")
                 
-                # 保存 AI 回复
+                # 保存对话记录
                 try:
-                    self.chat_history.add_message(thread_id, "assistant", response_text)
-                    logger.info(f"已保存 AI 回复到 Firebase")
+                    self.chat_history.add_message(thread_id, "user", "***")
+                    self.chat_history.add_message(thread_id, "assistant", "***")
+                    logger.info(f"已保存对话记录")
                 except Exception as e:
-                    logger.error(f"保存 AI 回复时出错: {str(e)}")
+                    logger.error(f"保存对话记录时出错: {str(e)}")
                 
                 return response_text
             except Exception as e:
