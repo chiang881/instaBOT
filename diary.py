@@ -430,14 +430,30 @@ class DiaryGenerator:
                     bucket_name = 'diaries'
                     storage_file_name = f"{date_str}.txt"
                     
+                    # 读取文件内容
                     with open(file_path, 'rb') as f:
-                        self.supabase.storage.from_(bucket_name).upload(
-                            path=storage_file_name,
-                            file=f,
-                            file_options={"content-type": "text/plain"}
-                        )
+                        file_data = f.read()
+                    
+                    # 上传文件，如果文件已存在则覆盖
+                    result = self.supabase.storage.from_(bucket_name).upload(
+                        path=storage_file_name,
+                        file=file_data,
+                        file_options={
+                            "content-type": "text/plain; charset=utf-8",
+                            "x-upsert": "true"  # 如果文件存在则覆盖
+                        }
+                    )
+                    
+                    if isinstance(result, dict) and 'error' in result:
+                        raise Exception(f"上传失败: {result['error']}")
+                        
                     storage_path = f"{bucket_name}/{storage_file_name}"
                     logger.info(f"日记文件已上传到 Supabase 存储: {storage_path}")
+                    
+                    # 获取文件的公共 URL
+                    file_url = self.supabase.storage.from_(bucket_name).get_public_url(storage_file_name)
+                    logger.info(f"文件公共访问 URL: {file_url}")
+                    
                 except Exception as e:
                     logger.warning(f"上传文件到 Supabase 存储失败: {str(e)}")
                 
