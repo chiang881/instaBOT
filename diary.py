@@ -86,7 +86,7 @@ class DiaryGenerator:
                 );
                 """
                 
-                # 使用 SQL API 创建表
+                # 使用 REST API 创建表
                 headers = {
                     'apikey': self.supabase_key,
                     'Authorization': f'Bearer {self.supabase_key}',
@@ -94,11 +94,20 @@ class DiaryGenerator:
                     'Prefer': 'return=minimal'
                 }
                 
+                # 先创建表
                 response = requests.post(
-                    f"{self.supabase_url}/rest/v1/sql",
+                    f"{self.supabase_url}/rest/v1/rpc/create_table",
                     headers=headers,
                     json={
-                        "query": create_table_sql
+                        "table_name": "diaries",
+                        "columns": [
+                            {"name": "id", "type": "bigint", "is_primary": True, "is_identity": True},
+                            {"name": "date", "type": "date", "is_nullable": False},
+                            {"name": "content", "type": "text", "is_nullable": False},
+                            {"name": "timestamp", "type": "timestamptz", "is_nullable": False},
+                            {"name": "created_at", "type": "timestamptz", "is_nullable": False, "default": "now()"},
+                            {"name": "file_path", "type": "text", "is_nullable": True}
+                        ]
                     }
                 )
                 
