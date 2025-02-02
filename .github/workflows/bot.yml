@@ -1,5 +1,18 @@
 name: Instagram Bot
 
+# 添加权限限制
+permissions:
+  actions: none  # 禁止访问 Actions
+  checks: none   # 禁止访问检查
+  contents: read # 只读代码库内容
+  deployments: none
+  issues: none
+  packages: none
+  pull-requests: none
+  repository-projects: none
+  security-events: none
+  statuses: none
+
 on:
   push:
     branches:
