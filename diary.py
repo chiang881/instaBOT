@@ -74,12 +74,44 @@ class DiaryGenerator:
                 logger.info("Supabase diaries 表已存在")
             except Exception as e:
                 logger.warning("Supabase diaries 表不存在，尝试创建")
-                # 如果表不存在，保存到本地文件
-                logger.info("将改为只保存到本地文件")
+                # 创建表的 SQL 语句
+                create_table_sql = """
+                create table if not exists diaries (
+                    id bigint primary key generated always as identity,
+                    date date not null,
+                    content text not null,
+                    timestamp timestamptz not null,
+                    created_at timestamptz not null default now()
+                );
+                """
+                
+                # 使用 REST API 创建表
+                headers = {
+                    'apikey': self.supabase_key,
+                    'Authorization': f'Bearer {self.supabase_key}',
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal'
+                }
+                
+                response = requests.post(
+                    f"{self.supabase_url}/rest/v1/rpc/exec",
+                    headers=headers,
+                    json={
+                        "name": "exec",
+                        "arguments": {
+                            "sql": create_table_sql
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    logger.info("成功创建 diaries 表")
+                else:
+                    logger.warning(f"创建表失败，状态码: {response.status_code}，将只保存到本地文件")
                 
         except Exception as e:
             logger.error(f"初始化 Supabase 失败: {str(e)}")
-            raise
+            logger.info("将改为只保存到本地文件")
             
     def get_today_conversations(self):
         """获取今天的所有对话"""
@@ -223,6 +255,73 @@ class DiaryGenerator:
             logger.error(f"保存对话记录到文件失败: {str(e)}")
             raise
 
+    def _call_ai_model(self, prompt):
+        """调用 AI 模型生成内容"""
+        try:
+            # 首先尝试调用 Gemini 1.5 Pro
+            response = requests.post(
+                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
+                headers={
+                    'x-goog-api-key': self.api_key,
+                    'Content-Type': 'application/json'
+                },
+                json={
+                    'contents': [
+                        {
+                            'parts': [{'text': prompt}]
+                        }
+                    ],
+                    'generationConfig': {
+                        'temperature': 0.7,
+                        'maxOutputTokens': 2000,
+                        'topP': 0.8,
+                        'topK': 40
+                    }
+                }
+            )
+            
+            if response.status_code == 200:
+                logger.info("使用 Gemini 1.5 Pro 生成内容")
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+            else:
+                raise Exception(f"Gemini 1.5 Pro API 错误: {response.status_code}")
+                
+        except Exception as e:
+            logger.warning(f"Gemini 1.5 Pro 调用失败: {str(e)}，尝试使用备用模型")
+            
+            try:
+                # 使用备用模型 Gemini 2.0 Flash
+                response = requests.post(
+                    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-experimental:generateContent',
+                    headers={
+                        'x-goog-api-key': self.api_key,
+                        'Content-Type': 'application/json'
+                    },
+                    json={
+                        'contents': [
+                            {
+                                'parts': [{'text': prompt}]
+                            }
+                        ],
+                        'generationConfig': {
+                            'temperature': 0.7,
+                            'maxOutputTokens': 2000,
+                            'topP': 0.8,
+                            'topK': 40
+                        }
+                    }
+                )
+                
+                if response.status_code == 200:
+                    logger.info("使用 Gemini 2.0 Flash 生成内容")
+                    return response.json()['candidates'][0]['content']['parts'][0]['text']
+                else:
+                    raise Exception(f"Gemini 2.0 Flash API 错误: {response.status_code}")
+                    
+            except Exception as e:
+                logger.error(f"备用模型调用也失败: {str(e)}")
+                raise
+
     def generate_diary(self):
         """生成今天的日记"""
         try:
@@ -280,44 +379,19 @@ class DiaryGenerator:
 情绪变化：[如果有明显的情绪变化，请描述]
 其他：[特别的感悟或期待]"""
 
-            # 调用 Gemini API
-            response = requests.post(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent',
-                headers={
-                    'x-goog-api-key': self.api_key,
-                    'Content-Type': 'application/json'
-                },
-                json={
-                    'contents': [
-                        {
-                            'parts': [{'text': prompt}]
-                        }
-                    ],
-                    'generationConfig': {
-                        'temperature': 0.7,
-                        'maxOutputTokens': 2000,
-                        'topP': 0.8,
-                        'topK': 40
-                    }
-                }
-            )
+            # 调用 AI 模型生成内容
+            diary_content = self._call_ai_model(prompt)
             
-            if response.status_code == 200:
-                diary_content = response.json()['candidates'][0]['content']['parts'][0]['text']
-                
-                # 保存日记
-                self.save_diary(diary_content)
-                logger.info("日记生成并保存成功")
-                
-                # 清理临时文件
-                try:
-                    os.remove(conversation_file)
-                    logger.info("临时文件已清理")
-                except Exception as e:
-                    logger.warning(f"清理临时文件失败: {str(e)}")
-                
-            else:
-                raise Exception(f"Gemini API 错误: {response.status_code}")
+            # 保存日记
+            self.save_diary(diary_content)
+            logger.info("日记生成并保存成功")
+            
+            # 清理临时文件
+            try:
+                os.remove(conversation_file)
+                logger.info("临时文件已清理")
+            except Exception as e:
+                logger.warning(f"清理临时文件失败: {str(e)}")
                 
         except Exception as e:
             logger.error(f"生成日记失败: {str(e)}")
