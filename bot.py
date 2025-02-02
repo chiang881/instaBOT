@@ -182,7 +182,7 @@ def call_memory_ai(messages):
             
         # 检查消息格式
         if not isinstance(messages, list) or len(messages) < 2:
-            logger.error(f"消息格式错误: {messages}")
+            logger.error("消息格式错误")
             return "none"
             
         # 安全地获取 thread_id
@@ -191,41 +191,22 @@ def call_memory_ai(messages):
             metadata = {}
         thread_id = metadata.get("thread_id")
         
-        logger.info(f"尝试获取对话历史 [原始对话ID: {thread_id}]")
-        logger.debug(f"消息内容: {json.dumps(messages[1], ensure_ascii=False)}")
-        
         if not thread_id:
             logger.error("消息中未找到对话 ID")
-            logger.debug(f"完整消息结构: {json.dumps(messages, ensure_ascii=False, indent=2)}")
             return "none"
             
+        masked_thread_id = f"****{str(thread_id)[-4:]}"
+        logger.info(f"尝试获取对话历史 [对话ID: {masked_thread_id}]")
+        
         ref = db.reference(f'chat_histories/{thread_id}')
         conversation = ref.get()
         
         if not conversation:
-            logger.warning(f"未找到对话历史 [对话ID: {thread_id}]")
+            logger.warning(f"未找到对话历史 [对话ID: {masked_thread_id}]")
             return "none"
             
-        logger.info(f"成功获取对话历史 [对话ID: {thread_id}]")
+        logger.info(f"成功获取对话历史 [对话ID: {masked_thread_id}]")
         logger.info(f"- 历史消息数: {len(conversation)}")
-        logger.info("- 最近的消息:")
-        # 显示最近的3条消息
-        for i, msg in enumerate(conversation[-3:]):
-            logger.info(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
-        
-        # 构建提示词
-        system_prompt = messages[0]["content"]
-        user_prompt = messages[1]["content"]
-        prompt = f"""请根据以下规则分析对话历史并回复：
-
-{system_prompt}
-
-对话历史:
-{json.dumps(conversation, ensure_ascii=False, indent=2)}
-
-当前问题: {user_prompt}
-
-请分析对话历史并按要求返回相关对话片段。"""
         
         logger.info("发送请求到 Gemini API...")
         
@@ -273,7 +254,6 @@ def call_memory_ai(messages):
             result = response.json()
             response_text = result['candidates'][0]['content']['parts'][0]['text']
             logger.info("Gemini API 响应成功")
-            logger.info(f"响应内容: {response_text[:200]}...")
             
             # 验证和格式化返回结果
             try:
@@ -304,7 +284,6 @@ def call_memory_ai(messages):
                 return "none"
         else:
             logger.error(f"Gemini API 错误: {response.status_code}")
-            logger.error(f"错误信息: {response.text}")
             return "none"
             
     except Exception as e:
@@ -376,7 +355,8 @@ class ChatHistoryManager:
     def load_conversation(self, thread_id):
         """从 Firebase 加载对话"""
         thread_id = str(thread_id)
-        logger.info(f"尝试从 Firebase 加载对话 [对话ID: {thread_id}]")
+        masked_thread_id = f"****{thread_id[-4:]}"
+        logger.info(f"尝试从 Firebase 加载对话 [对话ID: {masked_thread_id}]")
         
         try:
             # 从 Firebase 加载
@@ -449,7 +429,7 @@ class ChatHistoryManager:
             return
         
         # 最后记录日志
-        logger.info(f"添加新消息 [对话ID: {masked_thread_id}] - {role}: ***")
+        logger.info(f"添加新消息 [对话ID: {masked_thread_id}] - {role}")
 
 class InstagramBot:
     def __init__(self, username, password):
@@ -675,16 +655,13 @@ class InstagramBot:
         """获取AI回复"""
         try:
             # 先记录原始对话ID
-            logger.info(f"开始处理对话 [原始对话ID: {thread_id}]")
-            
-            # 隐藏敏感信息的线程ID
             masked_thread_id = f"****{str(thread_id)[-4:]}"
-            logger.info(f"处理对话 [掩码对话ID: {masked_thread_id}]")
+            logger.info(f"开始处理对话 [对话ID: {masked_thread_id}]")
             
             # 加载历史对话
             try:
                 conversation = self.chat_history.load_conversation(thread_id)
-                logger.info(f"加载历史对话 [对话ID: {thread_id}] - {len(conversation)} 条消息")
+                logger.info(f"加载历史对话 [对话ID: {masked_thread_id}] - {len(conversation)} 条消息")
             except Exception as e:
                 logger.error(f"加载历史对话时出错: {str(e)}")
                 conversation = []
@@ -735,10 +712,10 @@ class InstagramBot:
                 }
             ]
             
-            logger.info(f"开始调用记忆AI [对话ID: {thread_id}]")
-            logger.info(f"当前问题: {message}")
+            logger.info(f"开始调用记忆AI [对话ID: {masked_thread_id}]")
+            logger.debug("正在处理用户消息...")  # 不记录具体内容
             memory_response = call_memory_ai(memory_messages)
-            logger.info(f"记忆AI返回结果: ***")
+            logger.info(f"记忆AI返回结果 [对话ID: {masked_thread_id}]")
             
             # 处理记忆结果
             try:
@@ -793,11 +770,11 @@ class InstagramBot:
             # 生成回复
             try:
                 time.sleep(random.uniform(1, 3))
-                logger.info(f"开始调用对话AI生成回复")
+                logger.info(f"开始调用对话AI生成回复 [对话ID: {masked_thread_id}]")
                 response_text, switch_to_lingyi = create_chat_completion(messages, self.use_lingyi)
                 if switch_to_lingyi:
                     self.use_lingyi = True
-                logger.info(f"对话AI回复: ***")
+                logger.info(f"对话AI回复生成完成 [对话ID: {masked_thread_id}]")
                 
                 return response_text
             except Exception as e:
@@ -812,29 +789,26 @@ class InstagramBot:
         """根据对话ID加载特定的历史对话"""
         try:
             thread_id = str(thread_id)
+            masked_thread_id = f"****{thread_id[-4:]}"
             local_dir = "downloaded_artifacts 22-29-31-785/artifact_2510800793"
             filename = f"conversation_{thread_id}.json"
             filepath = os.path.join(local_dir, filename)
             
             if os.path.exists(filepath):
-                logger.info(f"找到对话历史文件 [对话ID: {thread_id}]")
+                logger.info(f"找到对话历史文件 [对话ID: {masked_thread_id}]")
                 with open(filepath, 'r', encoding='utf-8') as f:
                     conversation = json.load(f)
                 
                 # 将对话加载到chat_history中
                 self.chat_history.conversations[thread_id] = conversation
-                logger.info(f"成功加载对话历史 [对话ID: {thread_id}]")
+                logger.info(f"成功加载对话历史 [对话ID: {masked_thread_id}]")
                 logger.info(f"- 消息数量: {len(conversation)}")
-                logger.info("- 最近的消息:")
-                # 显示最近的3条消息
-                for i, msg in enumerate(conversation[-3:]):
-                    logger.info(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
                 return True
             else:
-                logger.info(f"未找到对话历史文件 [对话ID: {thread_id}]")
+                logger.info(f"未找到对话历史文件 [对话ID: {masked_thread_id}]")
                 return False
         except Exception as e:
-            logger.error(f"加载对话历史失败 [对话ID: {thread_id}]: {str(e)}")
+            logger.error(f"加载对话历史失败 [对话ID: {masked_thread_id}]: {str(e)}")
             return False
 
     def process_thread(self, thread):
@@ -875,13 +849,12 @@ class InstagramBot:
         """处理多条文本消息"""
         try:
             thread_id = str(thread_id)
-            # 只有多条消息时才使用编号格式
+            masked_thread_id = f"****{thread_id[-4:]}"
+            # 只记录消息数量，不记录具体内容
             if len(messages) > 1:
-                combined_message = "\n".join([f"{i+1}. {msg.text}" for i, msg in enumerate(messages)])
-                logger.info(f"合并处理 {len(messages)} 条消息 [对话ID: {thread_id}]")
+                logger.info(f"合并处理 {len(messages)} 条消息 [对话ID: {masked_thread_id}]")
             else:
-                combined_message = messages[0].text
-                logger.info(f"处理单条消息 [对话ID: {thread_id}]")
+                logger.info(f"处理单条消息 [对话ID: {masked_thread_id}]")
             
             # 先保存用户消息
             for message in messages:
@@ -895,18 +868,18 @@ class InstagramBot:
                         'timestamp': datetime.now().isoformat()
                     }
                 )
-                logger.info(f"已保存用户消息 [对话ID: {thread_id}]")
+                logger.info(f"已保存用户消息 [对话ID: {masked_thread_id}]")
             
             # 生成AI回复
-            logger.debug(f"开始生成AI回复 [对话ID: {thread_id}]")
+            logger.debug(f"开始生成AI回复 [对话ID: {masked_thread_id}]")
             ai_response = self.get_ai_response(combined_message, thread_id)
-            logger.debug(f"AI回复内容: {ai_response}")
+            logger.debug(f"已生成AI回复 [对话ID: {masked_thread_id}]")
             time.sleep(random.uniform(2, 5))
             
             # 使用direct_answer发送回复
             try:
                 self.client.direct_answer(thread_id, ai_response)
-                logger.info(f"回复成功 [对话ID: {thread_id}] - 消息已发送")
+                logger.info(f"回复成功 [对话ID: {masked_thread_id}]")
                 
                 # 保存AI回复
                 self.chat_history.add_message(
@@ -918,7 +891,7 @@ class InstagramBot:
                         'timestamp': datetime.now().isoformat()
                     }
                 )
-                logger.info(f"已保存AI回复 [对话ID: {thread_id}]")
+                logger.info(f"已保存AI回复 [对话ID: {masked_thread_id}]")
                 
                 # 标记所有消息为已处理
                 for message in messages:
