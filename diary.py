@@ -68,55 +68,6 @@ class DiaryGenerator:
     def _init_supabase(self):
         """初始化 Supabase 数据库"""
         try:
-            # 检查表是否存在
-            try:
-                self.supabase.table('diaries').select('*').limit(1).execute()
-                logger.info("Supabase diaries 表已存在")
-            except Exception as e:
-                logger.warning("Supabase diaries 表不存在，尝试创建")
-                # 创建表的 SQL 语句
-                create_table_sql = """
-                create table if not exists diaries (
-                    id bigint primary key generated always as identity,
-                    date date not null,
-                    content text not null,
-                    timestamp timestamptz not null,
-                    created_at timestamptz not null default now(),
-                    file_path text
-                );
-                """
-                
-                # 使用 REST API 创建表
-                headers = {
-                    'apikey': self.supabase_key,
-                    'Authorization': f'Bearer {self.supabase_key}',
-                    'Content-Type': 'application/json',
-                    'Prefer': 'return=minimal'
-                }
-                
-                # 先创建表
-                response = requests.post(
-                    f"{self.supabase_url}/rest/v1/rpc/create_table",
-                    headers=headers,
-                    json={
-                        "table_name": "diaries",
-                        "columns": [
-                            {"name": "id", "type": "bigint", "is_primary": True, "is_identity": True},
-                            {"name": "date", "type": "date", "is_nullable": False},
-                            {"name": "content", "type": "text", "is_nullable": False},
-                            {"name": "timestamp", "type": "timestamptz", "is_nullable": False},
-                            {"name": "created_at", "type": "timestamptz", "is_nullable": False, "default": "now()"},
-                            {"name": "file_path", "type": "text", "is_nullable": True}
-                        ]
-                    }
-                )
-                
-                if response.status_code in [200, 201]:
-                    logger.info("成功创建 diaries 表")
-                else:
-                    logger.warning(f"创建表失败，状态码: {response.status_code}，将只保存到本地文件")
-                    logger.debug(f"错误详情: {response.text}")
-                
             # 检查并创建存储桶
             try:
                 bucket_name = 'diaries'
@@ -132,8 +83,7 @@ class DiaryGenerator:
                 
         except Exception as e:
             logger.error(f"初始化 Supabase 失败: {str(e)}")
-            logger.info("将改为只保存到本地文件")
-            
+
     def get_today_conversations(self):
         """获取今天的所有对话"""
         try:
@@ -419,7 +369,7 @@ class DiaryGenerator:
             raise
 
     def save_diary(self, content):
-        """保存日记到 Supabase"""
+        """保存日记到 Supabase 存储"""
         try:
             current_time = datetime.now(self.timezone)
             date_str = current_time.strftime('%Y-%m-%d')
@@ -445,36 +395,10 @@ class DiaryGenerator:
                 if isinstance(result, dict) and 'error' in result:
                     raise Exception(f"上传失败: {result['error']}")
                     
-                storage_path = f"{bucket_name}/{storage_file_name}"
-                logger.info(f"日记文件已上传到 Supabase 存储: {storage_path}")
-                
-                # 获取文件的公共 URL
-                file_url = self.supabase.storage.from_(bucket_name).get_public_url(storage_file_name)
-                logger.info(f"文件公共访问 URL: {file_url}")
-                
-                # 保存记录到数据库
-                diary_data = {
-                    'date': date_str,
-                    'content': content,
-                    'timestamp': current_time.isoformat(),
-                    'created_at': current_time.isoformat(),
-                    'file_path': storage_path,
-                    'file_url': file_url
-                }
-                
-                response = self.supabase.table('diaries').insert(diary_data).execute()
-                data = response.data if hasattr(response, 'data') else None
-                error = response.error if hasattr(response, 'error') else None
-                
-                if error:
-                    raise Exception(f"数据库错误: {error}")
-                elif not data:
-                    raise Exception("数据库返回空数据")
-                    
-                logger.info("日记已成功保存到 Supabase")
+                logger.info(f"日记文件已上传到 Supabase 存储")
                 
             except Exception as e:
-                logger.error(f"保存到 Supabase 失败: {str(e)}")
+                logger.error(f"上传文件到 Supabase 存储失败: {str(e)}")
                 raise
                 
         except Exception as e:
