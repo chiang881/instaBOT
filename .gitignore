@@ -56,6 +56,10 @@ downloaded_artifacts*/
 # 日志文件
 *.log
 
+# 工具目录
+tools/
+utils/
+
 # 聊天历史和下载文件
 chat_history/
 chat_histories/
