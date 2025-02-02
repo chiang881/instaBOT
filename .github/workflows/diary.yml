@@ -1,0 +1,60 @@
+name: Daily Diary Generator
+
+# 添加权限限制
+permissions:
+  actions: none
+  checks: none
+  contents: read
+  deployments: none
+  issues: none
+  packages: none
+  pull-requests: none
+  repository-projects: none
+  security-events: none
+  statuses: none
+
+on:
+  # 每次提交时运行
+  push:
+    branches:
+      - main
+    paths:
+      - 'bot.py'  # 只在 bot.py 文件更改时触发
+  # 每天定时运行（北京时间 23:00，UTC 15:00）
+  schedule:
+    - cron: '0 15 * * *'
+  # 允许手动触发
+  workflow_dispatch:
+
+jobs:
+  generate-diary:
+    runs-on: ubuntu-latest
+    
+    env:
+      LOG_LEVEL: ERROR  # 设置日志级别为 ERROR，隐藏 INFO 日志
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
+      FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+      SUPABASE_URL: 'https://vxkqsvwnejnoqiwxrzen.supabase.co'
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+
+    steps:
+    - name: Checkout code
+      run: |
+        git clone https://github.com/chiang881/instaBOT.git .
+        git checkout ${{ github.sha }}
+        
+    - name: Install Python
+      run: |
+        sudo apt update
+        sudo apt install -y python3 python3-pip
+        
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip3 install -r requirements.txt
+        pip3 install pytz  # 添加时区支持
+        
+    - name: Generate diary
+      run: |
+        python3 diary.py 

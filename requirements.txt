@@ -7,6 +7,7 @@ requests==2.31.0
 
 # 数据库
 firebase-admin==6.3.0
+supabase==2.3.4  # Supabase Python 客户端
 
 # 工具和加密
 python-dotenv==1.0.0
@@ -14,4 +15,7 @@ cryptography==42.0.2
 Pillow>=8.1.1
 
 # 网络
-urllib3==2.1.0 
+urllib3==2.1.0
+
+# 时区支持
+pytz==2024.1 
