@@ -30,16 +30,16 @@ from firebase_admin import db
 load_dotenv()
 
 # 从环境变量获取日志级别
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')  # 默认为 INFO 级别
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'ERROR')  # 默认为 ERROR 级别，不输出 INFO 日志
 
 # 配置日志
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),  # 使用环境变量中的日志级别
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        # 总是输出到控制台
-        logging.StreamHandler(),
-        # 同时保存到文件
+        # 只在调试模式下输出到控制台
+        *([] if LOG_LEVEL == 'ERROR' else [logging.StreamHandler()]),
+        # 始终保存到文件，但根据日志级别过滤
         logging.FileHandler('bot.log')
     ]
 )
@@ -53,13 +53,6 @@ OPENAI_API_BASE = os.getenv('OPENAI_API_BASE', 'https://api.deepseek.com/v1')
 LINGYI_API_KEY = os.getenv('LINGYI_API_KEY', '')
 LINGYI_API_BASE = os.getenv('LINGYI_API_BASE', 'https://api.lingyiwanwu.com/v1/chat/completions')
 CHAT_HISTORY_KEY = os.getenv('CHAT_HISTORY_KEY', '')  # 用于加密聊天记录的密钥
-GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')  # 用于记忆管理的API密钥
-
-# 添加环境变量检查
-if not GROQ_API_KEY:
-    logger.error("GROQ_API_KEY 未在环境变量中设置")
-else:
-    logger.info("GROQ_API_KEY 已加载")
 
 # 配置OpenAI
 openai.api_key = OPENAI_API_KEY
