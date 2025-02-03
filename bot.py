@@ -592,10 +592,34 @@ class InstagramBot:
     def relogin(self):
         """重新登录"""
         try:
+            # 首先尝试从环境变量获取 session
+            session_base64 = os.getenv('INSTAGRAM_SESSION')
+            if session_base64:
+                try:
+                    logger.info("从环境变量获取 session")
+                    # 解码 base64 session
+                    session_json = base64.b64decode(session_base64).decode('utf-8')
+                    # 保存到临时文件
+                    with open('session.json', 'w') as f:
+                        f.write(session_json)
+                    # 加载 session
+                    if self.client.load_settings('session.json'):
+                        try:
+                            self.client.get_timeline_feed()
+                            logger.info("使用环境变量中的 session 登录成功")
+                            return True
+                        except Exception as e:
+                            logger.warning(f"使用环境变量中的 session 登录失败: {str(e)}")
+                except Exception as e:
+                    logger.error(f"处理环境变量中的 session 失败: {str(e)}")
+            
+            # 如果环境变量中的 session 无效，尝试使用用户名密码登录
+            logger.info("尝试使用用户名密码登录")
             self.client.login(self.username, self.password)
             self.client.dump_settings("session.json")
             logger.info("重新登录成功")
             return True
+            
         except Exception as e:
             logger.error(f"重新登录失败: {str(e)}")
             self.handle_exception(e)

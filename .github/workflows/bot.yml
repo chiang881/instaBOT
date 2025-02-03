@@ -26,6 +26,7 @@ jobs:
       LOG_LEVEL: INFO  # 设置日志级别为 INFO，显示详细日志
       INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
       INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
+      INSTAGRAM_SESSION: ${{ secrets.INSTAGRAM_SESSION }}  # 添加 Instagram 会话变量
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
       LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
@@ -33,6 +34,8 @@ jobs:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
       FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+      CHAT_HISTORY_KEY: ${{ secrets.CHAT_HISTORY_KEY }}  # 添加聊天历史加密密钥
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}  # 添加通用加密密钥
 
     steps:
     - name: Checkout code
