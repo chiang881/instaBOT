@@ -30,16 +30,16 @@ from firebase_admin import db
 load_dotenv()
 
 # 从环境变量获取日志级别
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'ERROR')  # 默认为 ERROR 级别，不输出 INFO 日志
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')  # 默认为 INFO 级别
 
 # 配置日志
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),  # 使用环境变量中的日志级别
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        # 只在调试模式下输出到控制台
-        *([] if LOG_LEVEL == 'ERROR' else [logging.StreamHandler()]),
-        # 始终保存到文件，但根据日志级别过滤
+        # 总是输出到控制台
+        logging.StreamHandler(),
+        # 同时保存到文件
         logging.FileHandler('bot.log')
     ]
 )
