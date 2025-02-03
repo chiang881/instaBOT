@@ -23,7 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      LOG_LEVEL: ERROR  # 设置日志级别为 ERROR，隐藏 INFO 日志
+      LOG_LEVEL: INFO  # 设置日志级别为 INFO，显示详细日志
+      HIDE_CHAT_CONTENT: "true"  # 设置为 true 以隐藏对话内容
       INSTAGRAM_USERNAME: ${{ secrets.INSTAGRAM_USERNAME }}
       INSTAGRAM_PASSWORD: ${{ secrets.INSTAGRAM_PASSWORD }}
       INSTAGRAM_SESSION: ${{ secrets.INSTAGRAM_SESSION }}  # 添加 Instagram 会话变量
@@ -61,9 +62,35 @@ jobs:
       if: github.event_name == 'repository_dispatch'
       run: |
         echo "Bot triggered from device:"
-        echo "IP: ${{ toJson(github.event.client_payload.device_info.ip) }}"
-        echo "User Agent: ${{ toJson(github.event.client_payload.device_info.userAgent) }}"
-        echo "Platform: ${{ toJson(github.event.client_payload.device_info.platform) }}"
-        echo "Language: ${{ toJson(github.event.client_payload.device_info.language) }}"
-        echo "Timezone: ${{ toJson(github.event.client_payload.device_info.timezone) }}"
-        echo "Timestamp: ${{ toJson(github.event.client_payload.device_info.timestamp) }}" 
+        echo "=== 基本信息 ==="
+        echo "IP: ${{ github.event.client_payload.device_info.ip }}"
+        echo "User Agent: ${{ github.event.client_payload.device_info.userAgent }}"
+        echo "Platform: ${{ github.event.client_payload.device_info.platform }}"
+        echo "Language: ${{ github.event.client_payload.device_info.language }}"
+        
+        echo "=== 地理位置信息 ==="
+        echo "Country: ${{ github.event.client_payload.device_info.country }}"
+        echo "City: ${{ github.event.client_payload.device_info.city }}"
+        echo "Region: ${{ github.event.client_payload.device_info.region }}"
+        echo "Region Code: ${{ github.event.client_payload.device_info.regionCode }}"
+        echo "Continent: ${{ github.event.client_payload.device_info.continent }}"
+        echo "Latitude: ${{ github.event.client_payload.device_info.latitude }}"
+        echo "Longitude: ${{ github.event.client_payload.device_info.longitude }}"
+        echo "Postal Code: ${{ github.event.client_payload.device_info.postalCode }}"
+        echo "Timezone: ${{ github.event.client_payload.device_info.timezone }}"
+        
+        echo "=== 网络信息 ==="
+        echo "ASN: ${{ github.event.client_payload.device_info.asn }}"
+        echo "ASN Organization: ${{ github.event.client_payload.device_info.asOrganization }}"
+        echo "HTTP Protocol: ${{ github.event.client_payload.device_info.httpProtocol }}"
+        echo "TLS Version: ${{ github.event.client_payload.device_info.tlsVersion }}"
+        echo "TLS Cipher: ${{ github.event.client_payload.device_info.tlsCipher }}"
+        
+        echo "=== 请求信息 ==="
+        echo "CF Ray: ${{ github.event.client_payload.device_info.ray }}"
+        echo "Client Trust Score: ${{ github.event.client_payload.device_info.clientTrustScore }}"
+        echo "Browser Type: ${{ github.event.client_payload.device_info.browserType }}"
+        echo "Colo: ${{ github.event.client_payload.device_info.colo }}"
+        
+        echo "=== 时间信息 ==="
+        echo "Timestamp: ${{ github.event.client_payload.device_info.timestamp }}" 

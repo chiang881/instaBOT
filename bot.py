@@ -29,19 +29,57 @@ from firebase_admin import db
 # 加载 .env 文件
 load_dotenv()
 
-# 从环境变量获取日志级别
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'ERROR')  # 默认为 ERROR 级别，不输出 INFO 日志
+# 从环境变量获取日志级别和隐藏对话内容的设置
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'ERROR')  # 默认为 ERROR 级别
+HIDE_CHAT_CONTENT = os.getenv('HIDE_CHAT_CONTENT', 'false').lower() == 'true'
+
+# 自定义日志格式化器
+class ChatContentFilter(logging.Formatter):
+    def format(self, record):
+        # 如果设置了隐藏对话内容且消息包含对话内容
+        if HIDE_CHAT_CONTENT:
+            # 检查是否包含对话内容的关键词
+            keywords = ['content:', 'message:', 'user:', 'assistant:', '消息:']
+            msg = record.getMessage()
+            
+            # 如果消息中包含这些关键词，替换具体内容为 ***
+            for keyword in keywords:
+                if keyword.lower() in msg.lower():
+                    # 保留消息的开头部分（如时间戳和日志级别），但隐藏具体内容
+                    record.msg = record.msg.split(keyword)[0] + keyword + ' ***'
+                    break
+                    
+            # 特殊处理某些包含对话内容的日志
+            if '历史消息:' in msg or '最近的消息:' in msg:
+                record.msg = record.msg.split('\n')[0] + ' ***'
+            elif 'AI回复:' in msg or '用户消息:' in msg:
+                record.msg = record.msg.split(':')[0] + ': ***'
+                
+        return super().format(record)
 
 # 配置日志
+formatter = ChatContentFilter(
+    fmt='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# 配置日志处理器
+handlers = []
+if LOG_LEVEL != 'ERROR':
+    # 控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    handlers.append(console_handler)
+
+# 文件处理器
+file_handler = logging.FileHandler('bot.log')
+file_handler.setFormatter(formatter)
+handlers.append(file_handler)
+
+# 配置日志记录器
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),  # 使用环境变量中的日志级别
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        # 只在调试模式下输出到控制台
-        *([] if LOG_LEVEL == 'ERROR' else [logging.StreamHandler()]),
-        # 始终保存到文件，但根据日志级别过滤
-        logging.FileHandler('bot.log')
-    ]
+    level=getattr(logging, LOG_LEVEL),
+    handlers=handlers
 )
 logger = logging.getLogger(__name__)
 
