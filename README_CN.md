@@ -1,6 +1,6 @@
 # InstaBOT
 
-[![中文](https://img.shields.io/badge/-%E4%B8%AD%E6%96%87-red)](README_CN.md)
+[![English](https://img.shields.io/badge/-English-blue)](README.md)
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python)](https://www.python.org/)
 [![Instagram](https://img.shields.io/badge/Instagram-API-ff69b4?logo=instagram)](https://www.instagram.com/)
 [![Firebase](https://img.shields.io/badge/Firebase-Realtime-orange?logo=firebase)](https://firebase.google.com/)
@@ -8,73 +8,6 @@
 [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI%2FCD-2088FF?logo=github-actions)](https://github.com/features/actions)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare)](https://workers.cloudflare.com/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-Your intelligent Instagram companion that feels like chatting with a real friend. It remembers your conversations, understands context, and even helps you keep a diary of your daily interactions.
-
-## What makes it special?
-
-- **Natural Conversations**: Chat like you're talking to a real friend. The bot remembers your previous conversations and responds contextually.
-- **Automatic Diary**: Your chats are automatically organized into a daily diary, complete with mood analysis and weather records.
-- **Smart & Safe**: Designed to behave naturally while keeping your account secure.
-
-## Technical Overview
-
-Built with modern technologies:
-- Firebase for conversation history
-- Supabase for diary storage
-- Multiple AI models (Gemini Pro/Flash)
-- GitHub Actions for automation
-- Cloudflare Workers for reliable triggering
-
-## Getting Started
-
-### Prerequisites
-
-You'll need Base64 encoded versions of:
-1. Firebase credentials (from your serviceAccount.json)
-2. Instagram session file (after first login)
-3. Proxy configuration (if needed)
-
-### Environment Variables
-
-Essential variables to configure:
-```bash
-# Instagram
-INSTAGRAM_USERNAME=your_username
-INSTAGRAM_PASSWORD=your_password
-INSTAGRAM_SESSION=base64_encoded_session
-
-# API Keys
-GEMINI_API_KEY=your_key
-LINGYI_API_KEY=your_key
-
-# Database
-FIREBASE_CREDENTIALS_BASE64=base64_encoded_credentials
-FIREBASE_DATABASE_URL=your_url
-SUPABASE_URL=your_url
-SUPABASE_KEY=your_key
-
-# Security
-CHAT_HISTORY_KEY=your_key
-ENCRYPTION_KEY=your_key
-```
-
-### Running the Bot
-
-You can trigger the bot in three ways:
-1. Manual trigger through GitHub Actions
-2. Scheduled runs
-3. Via Cloudflare Worker (recommended for reliability)
-
-For detailed Worker setup, check [Worker Setup Guide](docs/worker_setup.md)
-
-## Privacy & Security
-
-Your conversations are encrypted and stored securely. The bot follows Instagram's usage guidelines and includes safety measures to protect your account.
-
----
-
-# InstaBOT (中文版)
 
 这是一个智能 Instagram 助手，它就像一个真实的朋友，能与你自然对话，记住你们的交谈，还能帮你记录每天的生活点滴。
 
