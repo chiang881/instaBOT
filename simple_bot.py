@@ -557,37 +557,39 @@ class SimpleBot:
     def run(self):
         """运行机器人"""
         logger.info("机器人启动...")
-        print("机器人已启动，输入 'quit' 退出")
         
-        while True:
-            try:
-                user_input = input("\n你: ").strip()
-                logger.debug(f"收到用户输入: {user_input}")
+        try:
+            # 加载对话历史
+            thread_id = self.target_thread
+            conversation = self.chat_history.load_conversation(thread_id)
+            
+            if not conversation:
+                logger.info("未找到对话历史，退出")
+                return
                 
-                if user_input.lower() == 'quit':
-                    logger.info("用户请求退出")
-                    print("再见！")
-                    break
-                    
-                if not user_input:
-                    logger.debug("用户输入为空，继续等待")
-                    continue
-                    
-                response = self.handle_message(user_input)
-                print(f"\n机器人: {response}")
+            # 获取最新消息
+            latest_message = conversation[-1]
+            logger.info(f"最新消息 - 角色: {latest_message.get('role')}")
+            
+            # 只有当最新消息是用户发送的时候才处理
+            if latest_message.get('role') == 'user':
+                message = latest_message.get('content', '')
+                logger.info("检测到新的用户消息，开始处理")
+                logger.debug(f"消息内容: {message}")
                 
-            except KeyboardInterrupt:
-                logger.info("接收到键盘中断信号")
-                print("\n再见！")
-                break
-            except Exception as e:
-                logger.error(f"运行时错误: {str(e)}", exc_info=True)
-                print("抱歉，出现了一些错误，请重试")
-                global error_count
-                error_count += 1
-                if error_count >= MAX_ERRORS:
-                    logger.critical(f"错误次数达到上限 ({MAX_ERRORS})，程序退出")
-                    break
+                response = self.handle_message(message)
+                logger.info(f"机器人回复: {response}")
+                logger.info("消息处理完成")
+            else:
+                logger.info("最新消息不是用户发送的，无需处理")
+                
+        except Exception as e:
+            logger.error(f"运行时错误: {str(e)}", exc_info=True)
+            global error_count
+            error_count += 1
+            if error_count >= MAX_ERRORS:
+                logger.critical(f"错误次数达到上限 ({MAX_ERRORS})，程序退出")
+                return
 
 if __name__ == "__main__":
     try:
