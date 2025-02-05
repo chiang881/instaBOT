@@ -306,7 +306,7 @@ def call_memory_ai(messages):
         # 构建提示词
         system_prompt = messages[0]["content"]
         user_prompt = messages[1]["content"]
-        prompt = f"""你是一个专业的记忆管理 AI 助手。你的任务是从记忆库中提取相关对话片段，并严格按照以下格式返回。注意：你必须直接返回 JSON 格式的结果，不要包含任何其他内容。
+        prompt = """你是一个专业的记忆管理 AI 助手。你的任务是从记忆库中提取相关对话片段，并严格按照以下格式返回。注意：你必须直接返回 JSON 格式的结果，不要包含任何其他内容。
 
 1. 如果找到相关记忆，返回格式如下：
 [
@@ -338,12 +338,12 @@ def call_memory_ai(messages):
    - 例如：讨论游戏时的对话不要与讨论美食的对话混在一起
    - 即使用词相似，也要确保上下文主题相同
 
-对话历史:
-{json.dumps(conversation, ensure_ascii=False, indent=2)}
+对话历史：
+{0}
 
-当前问题: {user_prompt}
+当前问题：{1}
 
-请分析对话历史并按要求返回相关对话片段。"""
+请分析对话历史并按要求返回相关对话片段。""".format(json.dumps(conversation, ensure_ascii=False, indent=2), user_prompt)
         
         logger.info("发送请求到 Gemini API...")
         
@@ -559,29 +559,52 @@ class SimpleBot:
         logger.info("机器人启动...")
         
         try:
-            # 加载对话历史
-            thread_id = self.target_thread
-            conversation = self.chat_history.load_conversation(thread_id)
+            no_message_start_time = None  # 记录开始无消息的时间
             
-            if not conversation:
-                logger.info("未找到对话历史，退出")
-                return
+            while True:
+                # 加载对话历史
+                thread_id = self.target_thread
+                conversation = self.chat_history.load_conversation(thread_id)
                 
-            # 获取最新消息
-            latest_message = conversation[-1]
-            logger.info(f"最新消息 - 角色: {latest_message.get('role')}")
-            
-            # 只有当最新消息是用户发送的时候才处理
-            if latest_message.get('role') == 'user':
-                message = latest_message.get('content', '')
-                logger.info("检测到新的用户消息，开始处理")
-                logger.debug(f"消息内容: {message}")
+                if not conversation:
+                    logger.info("未找到对话历史，退出")
+                    return
+                    
+                # 获取最新消息
+                latest_message = conversation[-1]
+                logger.info(f"最新消息 - 角色: {latest_message.get('role')}")
                 
-                response = self.handle_message(message)
-                logger.info(f"机器人回复: {response}")
-                logger.info("消息处理完成")
-            else:
-                logger.info("最新消息不是用户发送的，无需处理")
+                # 只有当最新消息是用户发送的时候才处理
+                if latest_message.get('role') == 'user':
+                    # 重置无消息计时器
+                    no_message_start_time = None
+                    
+                    message = latest_message.get('content', '')
+                    logger.info("检测到新的用户消息，开始处理")
+                    logger.debug(f"消息内容: {message}")
+                    
+                    response = self.handle_message(message)
+                    logger.info(f"机器人回复: {response}")
+                    logger.info("消息处理完成")
+                    
+                    # 等待5秒后再次检查
+                    logger.info("等待5秒后再次检查...")
+                    time.sleep(5)
+                else:
+                    # 如果是首次没有新消息，记录开始时间
+                    if no_message_start_time is None:
+                        no_message_start_time = time.time()
+                        logger.info("开始记录无消息等待时间")
+                    
+                    # 检查是否超过1分钟
+                    elapsed_time = time.time() - no_message_start_time
+                    if elapsed_time >= 60:  # 1分钟
+                        logger.info("超过1分钟没有新消息，退出程序")
+                        return
+                    
+                    logger.info(f"最新消息不是用户发送的，已等待 {elapsed_time:.1f} 秒")
+                    logger.info("等待5秒后再次检查...")
+                    time.sleep(5)
                 
         except Exception as e:
             logger.error(f"运行时错误: {str(e)}", exc_info=True)
