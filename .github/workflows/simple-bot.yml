@@ -30,9 +30,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      run: |
-        git clone https://github.com/chiang881/Chronic.git .
-        git checkout ${{ github.sha }}
+      uses: actions/checkout@v4
         
     - name: Install Python
       run: |
