@@ -1,0 +1,49 @@
+name: Simple Bot
+
+permissions:
+  actions: none
+  checks: none
+  contents: read
+  deployments: none
+  issues: none
+  packages: none
+  pull-requests: none
+  repository-projects: none
+  security-events: none
+  statuses: none
+
+on:
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    env:
+      LOG_LEVEL: ERROR
+      HIDE_CHAT_CONTENT: "true"
+      LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
+      LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
+      FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
+      FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+    steps:
+    - name: Checkout code
+      run: |
+        git clone https://github.com/chiang881/instaBOT.git .
+        git checkout ${{ github.sha }}
+        
+    - name: Install Python
+      run: |
+        sudo apt update
+        sudo apt install -y python3 python3-pip
+        
+    - name: Install dependencies
+      run: |
+        python3 -m pip install --upgrade pip
+        pip3 install -r requirements-simple.txt
+        
+    - name: Run bot
+      run: |
+        python3 simple_bot.py 
