@@ -28,7 +28,10 @@ jobs:
       FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-    steps:    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
     - name: Install Python
       run: |
         sudo apt update
