@@ -30,8 +30,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
-      
+      run: |
+        git clone https://github.com/chiang881/instaBOT.git .
+        git checkout ${{ github.sha }}
+        
     - name: Install Python
       run: |
         sudo apt update
