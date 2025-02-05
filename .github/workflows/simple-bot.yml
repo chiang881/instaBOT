@@ -59,13 +59,4 @@ jobs:
         echo "simple_bot.py 内容："
         cat simple_bot.py
         echo "开始运行机器人..."
-        python3 -u simple_bot.py  # 添加 -u 参数以确保日志实时输出
-        
-    - name: Upload logs
-      if: always()  # 无论成功失败都上传日志
-      uses: actions/upload-artifact@v3
-      with:
-        name: bot-logs
-        path: |
-          *.log
-          simple_bot.log 
+        python3 -u simple_bot.py  # 添加 -u 参数以确保日志实时输出 
