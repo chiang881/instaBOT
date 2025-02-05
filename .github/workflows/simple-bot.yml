@@ -28,14 +28,7 @@ jobs:
       FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-    steps:
-    - name: Checkout code
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        git clone https://${GH_TOKEN}@github.com/chiang881/instaBOT.git .
-        git checkout ${{ github.sha }}
-        
+    steps:    
     - name: Install Python
       run: |
         sudo apt update
