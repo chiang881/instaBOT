@@ -1,16 +1,16 @@
 name: Simple Bot
 
 permissions:
-  actions: none
-  checks: none
-  contents: read
+  actions: write  # 允许工作流操作
+  checks: write   # 允许检查
+  contents: write # 允许读写仓库内容
   deployments: none
   issues: none
   packages: none
   pull-requests: none
   repository-projects: none
   security-events: none
-  statuses: none
+  statuses: write  # 允许更新状态
 
 on:
   workflow_dispatch:  # 允许手动触发
