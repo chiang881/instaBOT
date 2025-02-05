@@ -38,22 +38,22 @@ class ChatContentFilter(logging.Formatter):
     def format(self, record):
         # 如果设置了隐藏对话内容且消息包含对话内容
         if HIDE_CHAT_CONTENT:
-            try:
-                # 先尝试获取格式化后的消息
-                msg = super().format(record)
-                
-                # 如果消息中包含冒号，替换冒号后的所有内容为 ***
-                if ':' in msg:
-                    # 分割消息，只保留第一个冒号之前的内容
-                    parts = msg.split(':', 1)
-                    if len(parts) > 1:
-                        record.msg = parts[0] + ': ***'
-                        # 清除参数以避免格式化错误
-                        record.args = ()
-            except Exception:
-                # 如果出现任何错误，返回一个安全的消息
-                record.msg = "日志内容已隐藏"
-                record.args = ()
+            # 检查是否包含对话内容的关键词
+            keywords = ['content:', 'message:', 'user:', 'assistant:', '消息:']
+            msg = record.getMessage()
+            
+            # 如果消息中包含这些关键词，替换具体内容为 ***
+            for keyword in keywords:
+                if keyword.lower() in msg.lower():
+                    # 保留消息的开头部分（如时间戳和日志级别），但隐藏具体内容
+                    record.msg = record.msg.split(keyword)[0] + keyword + ' ***'
+                    break
+                    
+            # 特殊处理某些包含对话内容的日志
+            if '历史消息:' in msg or '最近的消息:' in msg:
+                record.msg = record.msg.split('\n')[0] + ' ***'
+            elif 'AI回复:' in msg or '用户消息:' in msg:
+                record.msg = record.msg.split(':')[0] + ': ***'
                 
         return super().format(record)
 

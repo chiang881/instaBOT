@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      LOG_LEVEL: ERROR
-      HIDE_CHAT_CONTENT: "true"
+      LOG_LEVEL: DEBUG  # 改为 DEBUG 级别以记录更多信息
+      HIDE_CHAT_CONTENT: "false"  # 显示对话内容以便调试
       LINGYI_API_KEY: ${{ secrets.LINGYI_API_KEY }}
       LINGYI_API_BASE: ${{ secrets.LINGYI_API_BASE }}
       FIREBASE_CREDENTIALS_BASE64: ${{ secrets.FIREBASE_CREDENTIALS_BASE64 }}
@@ -38,12 +38,34 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y python3 python3-pip
+        python3 --version
+        pip3 --version
         
     - name: Install dependencies
       run: |
         python3 -m pip install --upgrade pip
+        echo "当前目录文件列表："
+        ls -la
+        echo "requirements-simple.txt 内容："
+        cat requirements-simple.txt
         pip3 install -r requirements-simple.txt
+        echo "已安装的包列表："
+        pip3 list
         
     - name: Run bot
       run: |
-        python3 simple_bot.py 
+        echo "当前目录文件列表："
+        ls -la
+        echo "simple_bot.py 内容："
+        cat simple_bot.py
+        echo "开始运行机器人..."
+        python3 -u simple_bot.py  # 添加 -u 参数以确保日志实时输出
+        
+    - name: Upload logs
+      if: always()  # 无论成功失败都上传日志
+      uses: actions/upload-artifact@v3
+      with:
+        name: bot-logs
+        path: |
+          *.log
+          simple_bot.log 

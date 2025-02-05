@@ -22,28 +22,80 @@ LOG_LEVEL = os.getenv('LOG_LEVEL', 'ERROR')
 HIDE_CHAT_CONTENT = os.getenv('HIDE_CHAT_CONTENT', 'false').lower() == 'true'
 
 # 配置日志格式
-formatter = logging.Formatter(
-    fmt='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+class CustomFormatter(logging.Formatter):
+    """自定义日志格式化器，添加颜色和详细信息"""
+    grey = "\x1b[38;21m"
+    blue = "\x1b[38;5;39m"
+    yellow = "\x1b[38;5;226m"
+    red = "\x1b[38;5;196m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+
+    def __init__(self, fmt):
+        super().__init__()
+        self.fmt = fmt
+        self.FORMATS = {
+            logging.DEBUG: self.grey + self.fmt + self.reset,
+            logging.INFO: self.blue + self.fmt + self.reset,
+            logging.WARNING: self.yellow + self.fmt + self.reset,
+            logging.ERROR: self.red + self.fmt + self.reset,
+            logging.CRITICAL: self.bold_red + self.fmt + self.reset
+        }
+
+    def format(self, record):
+        # 添加更多上下文信息
+        record.process_id = os.getpid()
+        record.thread_name = record.threadName
+        if not hasattr(record, 'correlation_id'):
+            record.correlation_id = datetime.now().strftime('%Y%m%d%H%M%S%f')
+
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
 
 # 配置日志处理器
-handlers = []
-if LOG_LEVEL != 'ERROR':
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    handlers.append(console_handler)
-
-file_handler = logging.FileHandler('simple_bot.log')
-file_handler.setFormatter(formatter)
-handlers.append(file_handler)
-
-# 配置日志记录器
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    handlers=handlers
-)
 logger = logging.getLogger(__name__)
+logger.setLevel(getattr(logging, LOG_LEVEL))
+
+# 控制台处理器
+console_handler = logging.StreamHandler()
+console_handler.setLevel(getattr(logging, LOG_LEVEL))
+console_format = "%(asctime)s - [%(correlation_id)s] - %(process_id)d - %(thread_name)s - %(levelname)s - %(message)s"
+console_handler.setFormatter(CustomFormatter(console_format))
+logger.addHandler(console_handler)
+
+# 文件处理器
+file_handler = logging.FileHandler('simple_bot.log')
+file_handler.setLevel(getattr(logging, LOG_LEVEL))
+file_format = "%(asctime)s - [%(correlation_id)s] - %(process_id)d - %(thread_name)s - %(levelname)s - %(message)s"
+file_handler.setFormatter(logging.Formatter(file_format))
+logger.addHandler(file_handler)
+
+# 错误计数器
+error_count = 0
+MAX_ERRORS = 3
+
+def log_function_call(func):
+    """函数调用日志装饰器"""
+    def wrapper(*args, **kwargs):
+        func_name = func.__name__
+        logger.debug(f"开始执行函数: {func_name}")
+        logger.debug(f"参数: args={args}, kwargs={kwargs}")
+        try:
+            start_time = time.time()
+            result = func(*args, **kwargs)
+            end_time = time.time()
+            logger.debug(f"函数 {func_name} 执行完成，耗时: {end_time - start_time:.2f}秒")
+            return result
+        except Exception as e:
+            logger.error(f"函数 {func_name} 执行出错: {str(e)}", exc_info=True)
+            global error_count
+            error_count += 1
+            if error_count >= MAX_ERRORS:
+                logger.critical(f"错误次数达到上限 ({MAX_ERRORS})，程序将退出")
+                raise
+            raise
+    return wrapper
 
 class ChatHistoryManager:
     def __init__(self):
@@ -152,12 +204,15 @@ class ChatHistoryManager:
         
         logger.info(f"添加新消息 [对话ID: {masked_thread_id}] - {role}: ***")
 
+@log_function_call
 def create_chat_completion(messages, max_retries=3, retry_delay=2):
     """创建聊天回复，使用灵医万物 API"""
     retries = 0
     while retries < max_retries:
         try:
             logger.info(f"尝试调用灵医万物 API [尝试次数: {retries + 1}/{max_retries}]")
+            logger.debug(f"请求参数: {json.dumps(messages, ensure_ascii=False)}")
+            
             response = requests.post(
                 os.getenv('LINGYI_API_BASE', 'https://api.lingyiwanwu.com/v1/chat/completions'),
                 headers={
@@ -172,8 +227,14 @@ def create_chat_completion(messages, max_retries=3, retry_delay=2):
                 }
             )
             
+            logger.debug(f"API响应状态码: {response.status_code}")
+            logger.debug(f"API响应内容: {response.text}")
+            
             if response.status_code == 200:
-                return response.json()["choices"][0]["message"]["content"]
+                result = response.json()["choices"][0]["message"]["content"]
+                logger.info("API调用成功")
+                logger.debug(f"生成的回复: {result}")
+                return result
                 
             logger.error(f"API 错误 [状态码: {response.status_code}]")
             logger.error(f"错误响应: {response.text}")
@@ -188,7 +249,7 @@ def create_chat_completion(messages, max_retries=3, retry_delay=2):
             return "抱歉，我现在有点忙，稍后再试好吗？😭"
                 
         except Exception as e:
-            logger.error(f"API 调用异常: {str(e)}")
+            logger.error(f"API 调用异常: {str(e)}", exc_info=True)
             if retries < max_retries - 1:
                 logger.info(f"等待 {retry_delay} 秒后重试")
                 time.sleep(retry_delay)
@@ -198,6 +259,7 @@ def create_chat_completion(messages, max_retries=3, retry_delay=2):
             
     return "抱歉，我现在有点忙，稍后再试好吗？😭"
 
+@log_function_call
 def call_memory_ai(messages):
     """调用 Gemini 1.5 Flash 作为记忆 AI"""
     try:
@@ -237,10 +299,9 @@ def call_memory_ai(messages):
             
         logger.info(f"成功获取对话历史 [对话ID: {thread_id}]")
         logger.info(f"- 历史消息数: {len(conversation)}")
-        logger.info("- 最近的消息:")
-        # 显示最近的3条消息
-        for i, msg in enumerate(conversation[-3:]):
-            logger.info(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
+        logger.debug("对话历史详情:")
+        for i, msg in enumerate(conversation):
+            logger.debug(f"  {i+1}. {msg.get('role')}: {msg.get('content')[:100]}...")
         
         # 构建提示词
         system_prompt = messages[0]["content"]
@@ -370,13 +431,17 @@ def call_memory_ai(messages):
 
 class SimpleBot:
     def __init__(self):
+        logger.info("初始化 SimpleBot")
         self.chat_history = ChatHistoryManager()
         self.target_thread = "340282366841710301244276017723107508377"
+        logger.info(f"目标对话ID: {self.target_thread}")
         
+    @log_function_call
     def get_ai_response(self, message, thread_id):
         """获取AI回复"""
         try:
             logger.info(f"开始处理对话 [对话ID: {thread_id}]")
+            logger.debug(f"用户消息: {message}")
             
             # 加载历史对话
             conversation = self.chat_history.load_conversation(thread_id)
@@ -456,11 +521,13 @@ class SimpleBot:
             logger.error(f"AI回复生成失败: {str(e)}")
             return "抱歉，我现在有点忙，稍后再试好吗？😭"
 
+    @log_function_call
     def handle_message(self, message):
         """处理消息"""
         try:
-            # 检查是否是目标对话
             thread_id = self.target_thread
+            logger.info(f"处理新消息 [对话ID: {thread_id}]")
+            logger.debug(f"消息内容: {message}")
             
             # 保存用户消息
             self.chat_history.add_message(
@@ -471,6 +538,8 @@ class SimpleBot:
             
             # 生成回复
             response = self.get_ai_response(message, thread_id)
+            logger.info("AI回复生成完成")
+            logger.debug(f"回复内容: {response}")
             
             # 保存AI回复
             self.chat_history.add_message(
@@ -482,7 +551,7 @@ class SimpleBot:
             return response
             
         except Exception as e:
-            logger.error(f"处理消息失败: {str(e)}")
+            logger.error(f"处理消息失败: {str(e)}", exc_info=True)
             return "抱歉，处理消息时出错了"
 
     def run(self):
@@ -493,24 +562,42 @@ class SimpleBot:
         while True:
             try:
                 user_input = input("\n你: ").strip()
+                logger.debug(f"收到用户输入: {user_input}")
                 
                 if user_input.lower() == 'quit':
+                    logger.info("用户请求退出")
                     print("再见！")
                     break
                     
                 if not user_input:
+                    logger.debug("用户输入为空，继续等待")
                     continue
                     
                 response = self.handle_message(user_input)
                 print(f"\n机器人: {response}")
                 
             except KeyboardInterrupt:
+                logger.info("接收到键盘中断信号")
                 print("\n再见！")
                 break
             except Exception as e:
-                logger.error(f"运行时错误: {str(e)}")
+                logger.error(f"运行时错误: {str(e)}", exc_info=True)
                 print("抱歉，出现了一些错误，请重试")
+                global error_count
+                error_count += 1
+                if error_count >= MAX_ERRORS:
+                    logger.critical(f"错误次数达到上限 ({MAX_ERRORS})，程序退出")
+                    break
 
 if __name__ == "__main__":
-    bot = SimpleBot()
-    bot.run() 
+    try:
+        logger.info("程序启动")
+        logger.info(f"日志级别: {LOG_LEVEL}")
+        logger.info(f"隐藏对话内容: {HIDE_CHAT_CONTENT}")
+        bot = SimpleBot()
+        bot.run()
+    except Exception as e:
+        logger.critical(f"程序发生致命错误: {str(e)}", exc_info=True)
+        raise
+    finally:
+        logger.info("程序结束") 
