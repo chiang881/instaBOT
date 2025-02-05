@@ -1,0 +1,10 @@
+# 基础依赖
+python-dotenv==1.0.1
+firebase-admin==6.4.0
+requests==2.31.0
+
+# 加密相关
+cryptography==42.0.5
+
+# 日志相关
+colorlog==6.8.2 
